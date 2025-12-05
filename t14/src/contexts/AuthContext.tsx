@@ -1,4 +1,3 @@
-// src/contexts/AuthContext.tsx
 import React, {
   createContext,
   useContext,
@@ -7,7 +6,7 @@ import React, {
   ReactNode,
 } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "@/firebase/config";
+import { auth, db } from "@/firebase/config";
 import {
   AppUser,
   loginWithEmail,
@@ -16,7 +15,7 @@ import {
   mapFirebaseUser,
   registerWithEmail,
 } from "@/firebase/auth";
-
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 type AuthContextData = {
   user: AppUser | null;
   initializing: boolean;
@@ -37,7 +36,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loggingIn, setLoggingIn] = useState(false);
   const [registering, setRegistering] = useState(false);
 
-  // Observa login/logout do Firebase
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(mapFirebaseUser(firebaseUser));
@@ -56,11 +54,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // REGISTO (sem email de verificação por enquanto)
   const register = async (name: string, email: string, password: string) => {
     setRegistering(true);
     try {
       await registerWithEmail(name, email, password);
+
+      const firebaseUser = auth.currentUser;
+      if (firebaseUser) {
+        const userRef = doc(db, "user", firebaseUser.uid);
+
+        await setDoc(
+          userRef,
+          {
+            primeiroNome: name, 
+            email: email,
+            nickname: name, 
+            avatar: "",    
+            telefone: "",  
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+
       await logoutFirebase();
     } finally {
       setRegistering(false);
