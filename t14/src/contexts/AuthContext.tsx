@@ -9,13 +9,15 @@ import React, {
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/firebase/config";
 import {
-  AppUser,
   loginWithEmail,
   logoutFirebase,
   sendPasswordReset,
   mapFirebaseUser,
   registerWithEmail,
 } from "@/firebase/auth";
+import { createUserInFirestore } from "@/services/user";
+import { AppUser } from "@/types/User";
+
 
 type AuthContextData = {
   user: AppUser | null;
@@ -60,12 +62,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const register = async (name: string, email: string, password: string) => {
     setRegistering(true);
     try {
-      await registerWithEmail(name, email, password);
+      const newUser = await registerWithEmail(name, email, password);
+
+      // Modelo AppUser para salvar no Firestore
+      const appUser: AppUser = {
+        uid: newUser.uid,
+        email: newUser.email,
+        name: newUser.name ?? name,
+      };
+
+      await createUserInFirestore(appUser);
+
       await logoutFirebase();
     } finally {
       setRegistering(false);
     }
   };
+
+
+
 
   const logout = async () => {
     await logoutFirebase();
