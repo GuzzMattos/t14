@@ -1,28 +1,22 @@
-// src/firebase/auth.ts
+import { User } from "firebase/auth";
+import { auth } from "./config";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
   signOut,
   updateProfile,
-  User,
 } from "firebase/auth";
-import { auth } from "./config";
 
-export type AppUser = {
-  uid: string;
-  email: string | null;
-  name?: string | null;
-  photoURL?: string | null;
-};
+import { AppUser } from "@/types/User";
 
 export function mapFirebaseUser(user: User | null): AppUser | null {
   if (!user) return null;
+
   return {
-    uid: user.uid,
-    email: user.email,
-    name: user.displayName,
-    photoURL: user.photoURL,
+    uid: user.uid,                // agora existe
+    email: user.email ?? "",     // nunca mais erro TS
+    name: user.displayName ?? null
   };
 }
 
@@ -48,10 +42,10 @@ export async function loginWithEmail(
   return mapFirebaseUser(cred.user)!;
 }
 
-export async function logoutFirebase(): Promise<void> {
+export async function logoutFirebase() {
   await signOut(auth);
 }
 
-export async function sendPasswordReset(email: string): Promise<void> {
+export async function sendPasswordReset(email: string) {
   await sendPasswordResetEmail(auth, email);
 }

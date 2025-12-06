@@ -1,58 +1,51 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from "react-native";
 import Input from "@/components/Input";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import Filter from "@/components/Filter";
-
-type Grupo = {
-  id: string;
-  title: string;
-  status: string;
-  descricao: string;
-  despesas: number;
-};
+import { auth, db } from "@/firebase/config";
+import { Group } from "@/types/Group";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 
 const OPCOES = [
-  { id: "1", opcao: "Contas liquidadas" },
-  { id: "2", opcao: "Contas por liquidar" },
-  { id: "3", opcao: "Estou devendo" },
-  { id: "4", opcao: "Me devem" },
+  { id: "1", opcao: "LIQUIDADO" },
+  { id: "2", opcao: "POR_LIQUIDAR" },
 ];
 
-const GRUPO: Grupo[] = [
-  {
-    id: "1",
-    title: "Viagem para Madrid",
-    status: "Por liquidar",
-    descricao: "Teste",
-    despesas: 2,
-  },
-  {
-    id: "2",
-    title: "Lanche",
-    status: "Liquidado",
-    descricao: "Exemplo",
-    despesas: 2,
-  },
-  {
-    id: "3",
-    title: "Londres",
-    status: "Liquidada parcialmente",
-    descricao: "Exemplo 2",
-    despesas: 2,
-  },
-];
-
-export default function Grupos({ navigation }: any) {
-  const [pesquisar, setPesquisar] = useState<string>();
+export default function Groups({ navigation }: any) {
+  const [pesquisar, setPesquisar] = useState<string>("");
   const [filtro, setFiltro] = useState<string | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const user = auth.currentUser;
 
-  const gruposFiltrados = GRUPO.filter(grupo => {
+  // LISTA GRUPOS DO USUÁRIO LOGADO (tempo real)
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(
+      collection(db, "group"),
+      where("memberIds", "array-contains", user.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: Group[] = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Group[];
+
+      setGroups(list);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // APLICA FILTRO + PESQUISA
+  const gruposFiltrados = groups.filter((grupo) => {
     const correspondeFiltro = filtro ? grupo.status === filtro : true;
     const correspondePesquisa = pesquisar
-      ? grupo.title.toLowerCase().includes(pesquisar.toLowerCase())
+      ? grupo.name.toLowerCase().includes(pesquisar.toLowerCase())
       : true;
     return correspondeFiltro && correspondePesquisa;
   });
@@ -71,12 +64,15 @@ export default function Grupos({ navigation }: any) {
 
       <FlatList
         data={gruposFiltrados}
-        keyExtractor={i => i.id}
+        keyExtractor={(i) => i.id}
         contentContainerStyle={{ paddingBottom: 16 }}
-        renderItem={({ item }) => <GroupItem item={item} navigation={navigation} />}
+        renderItem={({ item }) => (
+          <GroupItem item={item} navigation={navigation} />
+        )}
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
       />
 
+      {/* BOTÃO DE ADICIONAR */}
       <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
         <Button
           title={<Ionicons name="add" size={24} color="#fff" />}
@@ -94,24 +90,31 @@ export default function Grupos({ navigation }: any) {
   );
 }
 
-function GroupItem({ item, navigation }: { item: Grupo; navigation: any }) {
+function GroupItem({ item, navigation }: { item: Group; navigation: any }) {
   return (
     <TouchableOpacity
       activeOpacity={0.8}
       style={s.activityCard}
       onPress={() =>
-        navigation.navigate("DetalhesGrupo", { grupoId: item.id, title: item.title })
+        navigation.navigate("DetalhesGrupo", {
+          grupoId: item.id,
+          name: item.name,
+        })
       }
     >
       <View style={s.avatar} />
+
       <View style={{ flex: 1 }}>
-        <Text style={s.activityTitle}>{item.title}</Text>
+        <Text style={s.activityTitle}>{item.name}</Text>
         <Text style={s.activitySub}>
-          {item.status} • {item.despesas} despesas
+          {item.status === "LIQUIDADO" ? "Liquidado" : "A liquidar"} • {item.description}
         </Text>
       </View>
+
       <TouchableOpacity
-        onPress={() => navigation.navigate("GrupoForm", { modo: "editar", grupo: item })}
+        onPress={() =>
+          navigation.navigate("GrupoForm", { modo: "editar", grupo: item })
+        }
       >
         <Ionicons name="pencil" size={18} color={colors.primary} />
       </TouchableOpacity>
@@ -152,7 +155,6 @@ const s = StyleSheet.create({
     color: "#6B7280",
     marginTop: 2,
   },
-  input: { borderColor: colors.border, backgroundColor: colors.background, borderRadius: 14 },
   topRow: {
     flexDirection: "row",
     gap: 10,
