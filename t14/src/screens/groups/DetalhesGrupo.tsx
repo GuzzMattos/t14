@@ -1,10 +1,23 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Pressable, Alert, ScrollView } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  Pressable,
+  Alert,
+  ScrollView,
+} from "react-native";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import Tab from "@/components/Tab";
 import Input from "@/components/Input";
+import { auth, db } from "@/firebase/config";
+import { Group } from "@/types/Group";
+import { getAllUsers } from "@/firebase/user";
+import { doc, onSnapshot } from "firebase/firestore";
 
 type DetalhesGrupo = {
   id: string;
@@ -49,165 +62,224 @@ const AMIGOS: Amigo[] = [
 
 const abas = ["Despesas", "Membros", "Saldos"];
 
+const s = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: colors.textDark,
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginBottom: 16,
+  },
+  botao: {
+    flex: 1,
+  },
+  cardsRow: {
+    flexDirection: "row",
+    marginBottom: 16,
+  },
+  metricCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+  },
+  metricLabel: {
+    color: "#6B7280",
+    marginBottom: 6,
+  },
+  metricValue: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: colors.textDark,
+  },
+  sectionTitle: {
+    fontWeight: "700",
+    color: colors.textDark,
+    marginBottom: 12,
+  },
+  activityCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#F2EAD9",
+    marginRight: 12,
+  },
+  activityTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.textDark,
+  },
+  activitySub: {
+    color: "#6B7280",
+    marginTop: 2,
+  },
+  exportar: {
+    color: "#334B34",
+    textDecorationLine: "underline",
+    fontWeight: "500",
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 15,
+  },
+  input: { 
+    borderColor: colors.border, 
+    borderRadius: 14, 
+    backgroundColor: colors.background },
+  listaMembros: {
+    backgroundColor: "#F5EEDC",
+    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    alignSelf: "flex-start",
+    minWidth: 80,
+    alignItems: "center",
+    position: "relative",
+    marginTop: 10,
+  },
+  botaoRemover: {
+    position: "absolute",
+    top: -8,
+    right: -8,
+    padding: 4,
+    backgroundColor: "red",
+    borderRadius: 25,
+  },
+});
+
 export default function DetalhesGrupo({ route, navigation }: any) {
-  const { title } = route.params;
+  const { grupoId, name } = route.params;
   const [abaAtiva, setAbaAtiva] = useState("Despesas");
-  const [pesquisarAmigo, setPesquisarAmigo] = useState<string>();
-  const [selecionados, setSelecionados] = useState<string[]>([]);
-  const [amigosDoGrupo, setAmigosDoGrupo] = useState<Amigo[]>(AMIGOS.filter(a => a.admin));
+  const [pesquisarAmigo, setPesquisarAmigo] = useState<string>("");
+  const [group, setGroup] = useState<Group | null>(null);
+  const [loadingGroup, setLoadingGroup] = useState(true);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const user = auth.currentUser;
+
+  // Busca o grupo em tempo real
+  useEffect(() => {
+    const ref = doc(db, "group", grupoId);
+
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        if (snap.exists()) {
+          setGroup({ id: snap.id, ...(snap.data() as any) });
+        } else {
+          setGroup(null);
+        }
+        setLoadingGroup(false);
+      },
+      (err) => {
+        console.error("Erro ao carregar grupo:", err);
+        setLoadingGroup(false);
+      }
+    );
+
+    return unsub;
+  }, [grupoId]);
+
+  useEffect(() => {
+    (async () => {
+      const users = await getAllUsers();
+      setAllUsers(users);
+    })();
+  }, []);
 
   const removerAcentos = (str: string) =>
-    str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    (str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
+  const amigosDoGrupo: Amigo[] = useMemo(() => {
+    if (!group?.memberIds || allUsers.length === 0) return [];
 
-  const amigosFiltrados = AMIGOS.filter(amigo =>
-    pesquisarAmigo ? removerAcentos(amigo.nome).includes(removerAcentos(pesquisarAmigo)) : true
+    return group.memberIds
+      .map((id) => {
+        const u = allUsers.find((usr) => usr.id === id);
+        if (!u) return null;
+
+        const displayName =
+          (u.name as string) ||
+          (u.primeiroNome as string) ||
+          (u.apelido as string) ||
+          (u.email as string) ||
+          "Sem nome";
+
+        return {
+          id,
+          nome: displayName,
+          numero: "",
+          admin: group.ownerId === id,
+        } as Amigo;
+      })
+      .filter(Boolean) as Amigo[];
+  }, [group, allUsers]);
+
+  const amigosFiltrados = useMemo(
+    () =>
+      amigosDoGrupo.filter((amigo) =>
+        pesquisarAmigo
+          ? removerAcentos(amigo.nome).includes(removerAcentos(pesquisarAmigo))
+          : true
+      ),
+    [amigosDoGrupo, pesquisarAmigo]
   );
 
-  const adicionarSelecionados = () => {
-    const novosAmigos = AMIGOS.filter(a => selecionados.includes(a.id) && !amigosDoGrupo.find(g => g.id === a.id));
-    setAmigosDoGrupo(prev => [...prev, ...novosAmigos]);
-    setSelecionados([]);
-    console.log("Amigos selecionados: ", selecionados);
-    
-  };
-
+  // Total gasto: se o grupo já tiver totalGasto no Firestore, usa ele
   const calcularTotalDespesas = () => {
+    if (group?.totalGasto != null) return group.totalGasto;
     return DESPESA.reduce((soma, item) => soma + item.despesa, 0);
   };
 
-  return (
-    <View style={s.container}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-        <Text style={s.title}>{title}</Text>
-        <View style={s.divider} />
+  const meuSaldo =
+    group?.balances && user ? group.balances?.[user.uid] ?? 0 : 0;
+
+  const handleEditarGrupo = () => {
+    if (!group) return;
+    navigation.navigate("GrupoForm", {
+      modo: "editar",
+      grupo: group,
+    });
+  };
+
+  if (loadingGroup) {
+    return (
+      <View style={s.container}>
+        <Text style={{ color: "#fff" }}>Carregando grupo...</Text>
       </View>
+    );
+  }
 
-      <Tab abas={abas} abaAtiva={abaAtiva} onChange={setAbaAtiva} />
+  if (!group) {
+    return (
+      <View style={s.container}>
+        <Text style={{ color: "#fff" }}>Grupo não encontrado.</Text>
+      </View>
+    );
+  }
 
-      {abaAtiva === "Despesas" && (
-        <>
-          <View style={s.cardsRow}>
-            <View style={[s.metricCard, { marginRight: 12 }]}>
-              <Text style={s.metricLabel}>Total gasto</Text>
-              <Text style={s.metricValue}>300€</Text>
-            </View>
-            <View style={s.metricCard}>
-              <Text style={s.metricLabel}>Você pagou</Text>
-              <Text style={s.metricValue}>40€</Text>
-            </View>
-          </View>
-
-          <View style={s.cardsRow}>
-            <View style={[s.metricCard, { alignItems: "center" }]}>
-              <Text style={s.metricLabel}>Seu saldo</Text>
-              <Text style={[s.metricValue, { color: "#2E7D32" }]}>+40€</Text>
-            </View>
-          </View>
-
-          <FlatList
-            data={DESPESA}
-            keyExtractor={(i) => i.id}
-            contentContainerStyle={{ paddingBottom: 16 }}
-            renderItem={({ item }) => <Item item={item} navigation={navigation} />}
-            ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          />
-
-          <View style={{ flexDirection: "row", gap: 10, padding: 16, alignItems: "center" }}>
-            <Button title="Nova despesa" onPress={() => navigation.navigate("DespesaForm")} style={s.botao} />
-            <Button 
-              title="Liquidar conta" 
-              onPress={() => {
-                const totalDespesas = calcularTotalDespesas();
-                navigation.navigate("Pagamento", { tipoPagamento: "total", valorDivida: totalDespesas });
-              }} 
-              variant="outline" 
-              style={s.botao} 
-            />
-          </View>
-          <TouchableOpacity>
-            <Text style={s.exportar}>Exportar relatório</Text>
-          </TouchableOpacity>
-        </>
-      )}
-
-      {abaAtiva === "Membros" && (
-        <View style={{ padding: 16 }}>
-          <View>
-            <Text style={[s.activitySub, {margin: 10}]}>Membros</Text>
-            <FlatList
-              data={[...AMIGOS].sort((a, b) => a.nome.localeCompare(b.nome))}
-              horizontal
-              contentContainerStyle={{ paddingBottom: 16 }}
-              renderItem={({ item }) => <ListaMembros amigo={item} />}
-              ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
-            />
-          </View>
-
-          <View>
-            <Text style={[s.activitySub, {margin: 10}]}>Adicionar amigo ao grupo</Text>
-            <Input
-              placeholder="Pesquisar amigos"
-              value={pesquisarAmigo}
-              onChangeText={setPesquisarAmigo}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              style={s.input}
-            />
-            <FlatList
-              data={[...amigosFiltrados].sort((a, b) => a.nome.localeCompare(b.nome))}
-              contentContainerStyle={{ paddingBottom: 16 }}
-              renderItem={({ item }) =>
-                  <ListaAmigos 
-                    amigo={item} 
-                    selecionado={selecionados.includes(item.id)} 
-                    onPress={() => {
-                      if (selecionados.includes(item.id)) {
-                        setSelecionados(prev => prev.filter(id => id !== item.id));
-                      } else {
-                        setSelecionados(prev => [...prev, item.id]);
-                      }
-                    }}
-                  />}
-                ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-            />
-          </View>
-          {selecionados.length > 0 && (
-            <Button 
-              title={`Adicionar ${selecionados.length} amigo(s)`} 
-              onPress={adicionarSelecionados} 
-              style={{ marginTop: 16 }} 
-            />
-          )}
-        </View>
-      )}
-
-      {abaAtiva === "Saldos" && (
-        <View style={{ padding: 16 }}>
-          <View style={[s.metricCard, { marginRight: 12 }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingBottom: 35 }}>
-              <View>
-                <Text style={s.metricValue}>João</Text>
-                <Text style={s.metricLabel}>A pagar</Text>
-              </View>
-                <Text style={s.metricValue}>300€</Text>
-            </View>
-          </View>
-
-          <Text style={[s.activitySub, {margin: 10}]}>Movimentações</Text>
-
-          <FlatList
-            data={MOVIMENTACOES}
-            keyExtractor={(i) => i.id}
-            contentContainerStyle={{ paddingBottom: 16 }}
-            renderItem={({ item }) => <Movimentacao item={item} />}
-            ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          />
-        </View>
-      )}
-    </View>
-  );
-}
 
 function Item({ item, navigation }: { item: DetalhesGrupo; navigation: any }) {
   return (
@@ -328,112 +400,4 @@ function Movimentacao({ item }: { item: DetalhesMovimentacao }) {
       </View>
     </TouchableOpacity>
   );
-}
-
-const s = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: colors.textDark,
-    textAlign: "center",
-    marginBottom: 10,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginBottom: 16,
-  },
-  botao: {
-    flex: 1,
-  },
-  cardsRow: {
-    flexDirection: "row",
-    marginBottom: 16,
-  },
-  metricCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-  },
-  metricLabel: {
-    color: "#6B7280",
-    marginBottom: 6,
-  },
-  metricValue: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: colors.textDark,
-  },
-  sectionTitle: {
-    fontWeight: "700",
-    color: colors.textDark,
-    marginBottom: 12,
-  },
-  activityCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: "#F2EAD9",
-    marginRight: 12,
-  },
-  activityTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: colors.textDark,
-  },
-  activitySub: {
-    color: "#6B7280",
-    marginTop: 2,
-  },
-  exportar: {
-    color: "#334B34",
-    textDecorationLine: "underline",
-    fontWeight: "500",
-    textAlign: "center",
-    marginTop: 8,
-    marginBottom: 15,
-  },
-  input: { 
-    borderColor: colors.border, 
-    borderRadius: 14, 
-    backgroundColor: colors.background },
-  listaMembros: {
-    backgroundColor: "#F5EEDC",
-    borderRadius: 20,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    alignSelf: "flex-start",
-    minWidth: 80,
-    alignItems: "center",
-    position: "relative",
-    marginTop: 10,
-  },
-  botaoRemover: {
-    position: "absolute",
-    top: -8,
-    right: -8,
-    padding: 4,
-    backgroundColor: "red",
-    borderRadius: 25,
-},
-});
+}}

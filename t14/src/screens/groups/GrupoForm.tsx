@@ -12,7 +12,9 @@ import {
 import Input from "@/components/Input";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
-import { createGroupInFirestore } from "@/firebase/group";
+import { createGroupInFirestore,
+         updateGroupInFirestore,
+         deleteGroupFromFirestore, } from "@/firebase/group";
 import { auth, db } from "@/firebase/config";
 import { getAllUsers } from "@/firebase/user";
 import { doc, updateDoc, Timestamp } from "firebase/firestore";
@@ -34,11 +36,12 @@ export default function GrupoForm({ route, navigation }: any) {
   const { modo, grupo } = route.params || {};
 
   useEffect(() => {
-    if (modo === "editar") {
-      setNomeGrupo(grupo?.title || "");
-      setDescricao(grupo?.descricao || "");
+    if (modo === "editar" && grupo) {
+      setNomeGrupo(grupo.name || "");
+      setDescricao(grupo.description || "");
     }
   }, [modo, grupo]);
+
 
   useEffect(() => {
     navigation.setOptions({
@@ -47,7 +50,7 @@ export default function GrupoForm({ route, navigation }: any) {
   }, [navigation, modo]);
 
   useEffect(() => {
-    // carrega todos os users (id + email)
+    // carrega todos os users
     async function loadUsers() {
       try {
         const users = await getAllUsers();
@@ -58,6 +61,21 @@ export default function GrupoForm({ route, navigation }: any) {
     }
     loadUsers();
   }, []);
+
+  useEffect(() => {
+    if (modo !== "editar" || !grupo || allUsers.length === 0) return;
+
+    const emailsSelecionados: string[] = [];
+
+    allUsers.forEach((u) => {
+      if (grupo.memberIds?.includes(u.id) && u.email) {
+        emailsSelecionados.push(u.email);
+      }
+    });
+
+    setSelectedMembers(emailsSelecionados);
+  }, [modo, grupo, allUsers]);
+
 
   const toggleSelectEmail = (email: string) => {
     setSelectedMembers((prev) =>
@@ -80,7 +98,7 @@ export default function GrupoForm({ route, navigation }: any) {
 
       setLoadingCreate(true);
 
-      // 1) cria o grupo básico (owner já vira membro OWNER)
+      //cria o grupo básico
       const groupId = await createGroupInFirestore({
         name: nomeGrupo.trim(),
         description: descricao?.trim() || "",
@@ -88,9 +106,8 @@ export default function GrupoForm({ route, navigation }: any) {
         ownerId: user.uid,
       });
 
-      // 2) se houver membros selecionados, converte emails -> ids e atualiza o doc do grupo
+      //se houver membros selecionados, converte emails -> ids e atualiza o doc do grupo
       if (selectedMembers.length > 0) {
-        // map email -> id (somente emails encontrados)
         const emailToIdMap = new Map<string, string>();
         allUsers.forEach((u) => {
           if (u.email) emailToIdMap.set(u.email.toLowerCase(), u.id);
@@ -104,12 +121,12 @@ export default function GrupoForm({ route, navigation }: any) {
 
         // se não encontrou nenhum id, ignora
         if (memberIdsFromEmails.length > 0) {
-          // prepara estruturas members e balances (mantendo o owner já existente)
+          // prepara estruturas members e balances
           const now = Timestamp.now();
 
           const membersUpdate: Record<string, any> = {};
           const balancesUpdate: Record<string, number> = {};
-          const memberIdsUpdate: string[] = []; // somente os novos + owner será mantido pelo createGroup
+          const memberIdsUpdate: string[] = [];
 
           memberIdsFromEmails.forEach((id) => {
             membersUpdate[id] = {
@@ -129,12 +146,10 @@ export default function GrupoForm({ route, navigation }: any) {
             // portanto pegamos que o createGroupInFirestore já criou memberIds = [ownerId], nós substituiremos por owner + novos
             memberIds: [...(memberIdsFromEmails ? [user.uid, ...memberIdsFromEmails] : [user.uid])],
             members: {
-              // isso sobrescreve a chave members (merge parcial)
               ...membersUpdate,
             },
             balances: {
               ...balancesUpdate,
-              // o owner já tem 0 criado inicialmente pelo createGroupInFirestore
             },
             lastActivityAt: now,
             updatedAt: now,
@@ -151,6 +166,99 @@ export default function GrupoForm({ route, navigation }: any) {
       setLoadingCreate(false);
     }
   };
+
+  const handleUpdateGroup = async () => {
+    try {
+      if (!grupo?.id) {
+        Alert.alert("Erro", "ID do grupo não encontrado.");
+        return;
+      }
+
+      if (!nomeGrupo || !nomeGrupo.trim()) {
+        Alert.alert("Erro", "O nome do grupo é obrigatório.");
+        return;
+      }
+
+      const user = auth.currentUser;
+      if (!user) {
+        Alert.alert("Erro", "Você precisa estar logado.");
+        return;
+      }
+
+      setLoadingCreate(true);
+
+      // mapa email -> id
+      const emailToIdMap = new Map<string, string>();
+      allUsers.forEach((u) => {
+        if (u.email) emailToIdMap.set(u.email.toLowerCase(), u.id);
+      });
+
+      const memberIdsFromEmails: string[] = [];
+      selectedMembers.forEach((email) => {
+        const id = emailToIdMap.get((email || "").toLowerCase());
+        if (id && id !== user.uid) memberIdsFromEmails.push(id);
+      });
+
+      const now = Timestamp.now();
+
+      const membersUpdate: Record<string, any> = {};
+      const balancesUpdate: Record<string, number> = {};
+
+      memberIdsFromEmails.forEach((id) => {
+        membersUpdate[id] = {
+          role: "MEMBER",
+          status: "ATIVO",
+          joinedAt: now,
+        };
+        balancesUpdate[id] = 0;
+      });
+
+      const updatePayload: any = {
+        name: nomeGrupo.trim(),
+        description: descricao?.trim() || "",
+        // owner + demais membros selecionados
+        memberIds: [user.uid, ...memberIdsFromEmails],
+        // mantemos o que já existia + sobrescrevemos/ adicionamos os novos
+        members: {
+          ...(grupo.members || {}),
+          ...membersUpdate,
+        },
+        balances: {
+          ...(grupo.balances || {}),
+          ...balancesUpdate,
+        },
+      };
+
+      await updateGroupInFirestore(grupo.id, updatePayload);
+
+      Alert.alert("Sucesso", "Grupo atualizado com sucesso!");
+      navigation.goBack();
+    } catch (error: any) {
+      console.error("Erro ao editar grupo:", error);
+      Alert.alert("Erro ao editar grupo", error?.message || String(error));
+    } finally {
+      setLoadingCreate(false);
+    }
+  };
+
+  const handleDeleteGroup = async () => {
+    try {
+      if (!grupo?.id) {
+        Alert.alert("Erro", "ID do grupo não encontrado.");
+        return;
+      }
+
+      await deleteGroupFromFirestore(grupo.id);
+
+      Alert.alert("Sucesso", "Grupo excluído com sucesso!");
+      navigation.goBack();
+    } catch (error: any) {
+      console.error("Erro ao excluir grupo:", error);
+      Alert.alert("Erro ao excluir grupo", error?.message || String(error));
+    }
+  };
+
+
 
   return (
     <View style={s.container}>
@@ -188,7 +296,7 @@ export default function GrupoForm({ route, navigation }: any) {
         title={modo === "editar" ? "Salvar alterações" : loadingCreate ? "Criando..." : "Criar grupo"}
         onPress={() => {
           if (modo === "editar") {
-            Alert.alert("Sucesso", "Editar ainda não implementado.");
+            handleUpdateGroup();
           } else {
             handleCreateGroup();
           }
@@ -209,15 +317,14 @@ export default function GrupoForm({ route, navigation }: any) {
                 {
                   text: "Excluir",
                   style: "destructive",
-                  onPress: () => {
-                    Alert.alert("Sucesso", "Grupo excluído com sucesso!");
-                  },
+                  onPress: handleDeleteGroup,
                 },
               ]
             );
           }}
         />
       )}
+
 
       {/* Modal de seleção */}
       <Modal visible={openSelect} animationType="slide" transparent>

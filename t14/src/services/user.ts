@@ -10,6 +10,8 @@ export async function createUserInFirestore(user: AppUser) {
         id: user.uid,
         email: user.email,
         name: user.name,
+        notification: user.notification ?? true,
+        isActive: user.isActive ?? true,
     });
 }
 
@@ -25,6 +27,8 @@ export async function getUserFromFirestore(userId: string): Promise<User | null>
         id: userId,
         email: data.email,
         password: data.password ?? undefined,
+        notification: data.notification ?? true,
+        isActive: data.isActive ?? true,
     };
 }
 

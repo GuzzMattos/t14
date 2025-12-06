@@ -58,6 +58,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+
   // REGISTO (sem email de verificação por enquanto)
   const register = async (name: string, email: string, password: string) => {
     setRegistering(true);
