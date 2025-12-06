@@ -3,6 +3,7 @@ import { View, StyleSheet, Alert } from "react-native";
 import Input from "@/components/Input";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
+import SelectFilter from "@/components/SelectFilter";
 
 type Grupo = {
   id: string;
@@ -74,12 +75,9 @@ export default function GrupoForm({ route, navigation }: any) {
         style={s.input}
       />
 
-      <Input
-        label="Adicionar membros"
-        placeholder="ex: João, Maria, Pedro"
-        value={membros}
-        onChangeText={setMembros}
-        style={s.input}
+      <SelectFilter
+        options={['Ana', 'Carlos']}
+        onSelect={(item) => console.log("Selecionado:", item)}
       />
 
       <Button
