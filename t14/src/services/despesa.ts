@@ -27,6 +27,8 @@ export async function createDespesaInFirestore(payload: CreateDespesaPayload) {
     abaTipo,
     abaDiferente,
     valoresIndividuais,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   };
 
   const docRef = await addDoc(collection(db, "despesa"), novaDespesa);
@@ -45,21 +47,21 @@ export async function updateDespesaInFirestore(despesaId: string, payload: Creat
 }
 
 export async function getDespesaFromFirestore(despesaId: string): Promise<Despesa | null> {
-    const ref = doc(db, "despesa", despesaId);
-    const snap = await getDoc(ref);
+  const ref = doc(db, "despesa", despesaId);
+  const snap = await getDoc(ref);
 
-    if (!snap.exists()) return null;
+  if (!snap.exists()) return null;
 
-    const data = snap.data();
+  const data = snap.data();
 
-    return {
-        id: despesaId,
-        descricao: data.descricao,
-        valorTotal: data.valorTotal,
-        pagador: data.pagador,
-        groupId: data.groupId,
-        abaTipo: data.abaTipo as DespesaTipo,
-        abaDiferente: data.abaDiferente as DespesaDiferente,
-        valoresIndividuais: data.valoresIndividuais as DespesaPessoa[],
-    };
+  return {
+      id: despesaId,
+      descricao: data.descricao,
+      valorTotal: data.valorTotal,
+      pagador: data.pagador,
+      groupId: data.groupId,
+      abaTipo: data.abaTipo as DespesaTipo,
+      abaDiferente: data.abaDiferente as DespesaDiferente,
+      valoresIndividuais: data.valoresIndividuais as DespesaPessoa[],
+  };
 }
