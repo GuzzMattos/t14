@@ -4,8 +4,10 @@ import Input from "@/components/Input";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
 import Tab from "@/components/Tab";
-import { collection, addDoc, setDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore"; 
+import { collection, addDoc, setDoc, doc, updateDoc, serverTimestamp, query, where, onSnapshot } from "firebase/firestore"; 
 import { db } from "@/firebase/config"
+import { createDespesaInFirestore, updateDespesaInFirestore } from "@/services/despesa";
+import { DespesaTipo, DespesaDiferente } from "@/types/Despesa";
 
 type Pessoa = {
   id: string;
@@ -14,13 +16,13 @@ type Pessoa = {
 };
 
 export default function DespesaForm({ route, navigation }: any) {
-  const { modo, despesa } = route.params || {};
+  const { modo, despesa, groupId } = route.params || {};
 
   const [descricao, setDescricao] = useState<string>();
   const [valorTotal, setValorTotal] = useState<string>();
   const [pagador, setPagador] = useState<string>();
-  const [abaTipo, setAbaTipo] = useState("Igual");
-  const [abaDiferente, setAbaDiferente] = useState("Valor");
+  const [abaTipo, setAbaTipo] = useState<DespesaTipo>("Igual");
+  const [abaDiferente, setAbaDiferente] = useState<DespesaDiferente>("Valor");
 
   const [valoresIndividuais, setValoresIndividuais] = useState<Pessoa[]>([
     { id: "1", nome: "João", valor: "" },
@@ -78,10 +80,11 @@ export default function DespesaForm({ route, navigation }: any) {
       }
 
       try {
-        const novaDespesa = {
+        const despesaId = await createDespesaInFirestore ({
           descricao,
           valorTotal: parseFloat(valorTotal.replace(",", ".")),
           pagador,
+          groupId,
           abaTipo,
           abaDiferente,
           valoresIndividuais: valoresIndividuais.map(p => ({
@@ -89,12 +92,9 @@ export default function DespesaForm({ route, navigation }: any) {
             nome: p.nome,
             valor: parseFloat(p.valor.replace(",", ".")) || 0
           })),
-          criadoEm: serverTimestamp(),
-        };
+        });
 
-        const docRef = await addDoc(collection(db, "despesa"), novaDespesa);
-
-        console.log("Despesa adicionada com ID:", docRef.id);
+        console.log("Despesa adicionada com sucesso", despesaId);
         Alert.alert("Sucesso", "Despesa adicionada com sucesso!");
         navigation.goBack();
       } catch (error) {
@@ -115,12 +115,11 @@ export default function DespesaForm({ route, navigation }: any) {
         return;
       }
 
-      const despesaRef = doc(db, "despesa", despesa.id);
-
-      await updateDoc(despesaRef, {
+      await updateDespesaInFirestore(despesa.id, {
         descricao,
         valorTotal: parseFloat(valorTotal.replace(",", ".")),
         pagador,
+        groupId,
         abaTipo,
         abaDiferente,
         valoresIndividuais: valoresIndividuais.map((p) => ({
@@ -128,7 +127,6 @@ export default function DespesaForm({ route, navigation }: any) {
           nome: p.nome,
           valor: parseFloat(p.valor.replace(",", "."))
         })),
-        atualizadoEm: serverTimestamp(),
       });
 
       Alert.alert("Sucesso", "Despesa atualizada com sucesso!");
@@ -226,7 +224,11 @@ export default function DespesaForm({ route, navigation }: any) {
           style={s.input}
         />
 
-        <Tab abas={["Igual", "Diferente"]} abaAtiva={abaTipo} onChange={setAbaTipo} />
+        <Tab<DespesaTipo>
+          abas={["Igual", "Diferente"]}
+          abaAtiva={abaTipo}
+          onChange={setAbaTipo}
+        />
 
         {abaTipo === "Igual" && (
           <FlatList
@@ -244,7 +246,7 @@ export default function DespesaForm({ route, navigation }: any) {
 
         {abaTipo === "Diferente" && (
           <View style={{ marginTop: 12 }}>
-            <Tab
+            <Tab<DespesaDiferente>
               abas={["Valor", "Porcentagem"]}
               abaAtiva={abaDiferente}
               onChange={setAbaDiferente}
