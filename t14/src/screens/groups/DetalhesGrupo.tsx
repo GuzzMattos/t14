@@ -52,7 +52,7 @@ const AMIGOS: Amigo[] = [
 const abas = ["Despesas", "Membros", "Saldos"];
 
 export default function DetalhesGrupo({ route, navigation }: any) {
-  const { title } = route.params;
+  const { title, groupId } = route.params;
   const [abaAtiva, setAbaAtiva] = useState("Despesas");
   const [pesquisarAmigo, setPesquisarAmigo] = useState<string>();
   const [selecionados, setSelecionados] = useState<string[]>([]);
@@ -118,7 +118,7 @@ export default function DetalhesGrupo({ route, navigation }: any) {
           />
 
           <View style={{ flexDirection: "row", gap: 10, padding: 16, alignItems: "center" }}>
-            <Button title="Nova despesa" onPress={() => navigation.navigate("DespesaForm")} style={s.botao} />
+            <Button title="Nova despesa" onPress={() => navigation.navigate("DespesaForm", { groupId })} style={s.botao} />
             <Button 
               title="Liquidar conta" 
               onPress={() => {
@@ -241,7 +241,7 @@ function Item({ item, navigation }: { item: DetalhesGrupo; navigation: any }) {
         onPress={() =>
           navigation.navigate("DespesaForm", {
             modo: "editar",
-            despesa: {
+            grupo: {
               descricao: item.title,
               valorTotal: item.despesa.toString(),
               pagador: item.pessoaPagou,
