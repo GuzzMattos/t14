@@ -16,20 +16,14 @@ import { auth, db } from "@/firebase/config";
 import { Group } from "@/types/Group";
 import { getAllUsers } from "@/firebase/user";
 import { doc, onSnapshot } from "firebase/firestore";
+import { getDespesasByGroup, getTotalDespesasGrupo, getTotalPagoPorUsuario } from "@/firebase/despesa";
 
 type DetalhesGrupo = {
   id: string;
   title: string;
-  despesa: number;
-  pessoaPagou: string;
+  gasto: number;
   divisao: string;
 };
-
-const DESPESA: DetalhesGrupo[] = [
-  { id: "1", title: "Hotel", despesa: 1200, pessoaPagou: "João", divisao: "Igualitária" },
-  { id: "2", title: "Gasolina", despesa: 45, pessoaPagou: "Maria", divisao: "Proporcional" },
-  { id: "3", title: "Jantar", despesa: 300, pessoaPagou: "Pedro", divisao: "Percentual" },
-];
 
 type DetalhesMovimentacao = {
   id: string,
@@ -176,6 +170,12 @@ export default function DetalhesGrupo({ route, navigation }: any) {
   const [loadingGroup, setLoadingGroup] = useState(true);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const user = auth.currentUser;
+  const [despesas, setDespesas] = useState<DetalhesGrupo[]>([]);
+  const [loadingDespesas, setLoadingDespesas] = useState(true);
+
+  const [totalPago, setTotalPago] = useState<number>(0);
+
+  const [totalDespesas, setTotalDespesas] = useState<number>(0);
 
   useEffect(() => {
     const ref = doc(db, "group", grupoId);
@@ -205,6 +205,53 @@ export default function DetalhesGrupo({ route, navigation }: any) {
       setAllUsers(users);
     })();
   }, []);
+
+  useEffect(() => {
+    setLoadingDespesas(true);
+
+    getDespesasByGroup(grupoId)
+      .then((dados) => {
+        const despesasFormatadas = dados.map((d) => ({
+          id: d.id,
+          title: d.descricao,
+          gasto: d.valorTotal,
+          divisao: d.abaTipo === "Igual" ? "Igual" : "Diferente",
+          quemPagou: d.pagador,
+          valores: d.valoresIndividuais
+        }));
+        setDespesas(despesasFormatadas);
+      })
+      .catch((err) => {
+        console.log("Erro ao buscar despesas: ", err);
+      })
+      .finally(() => setLoadingDespesas(false));
+  }, [grupoId])
+
+  useEffect(() => {
+    async function loadTotal() {
+      const total = await getTotalDespesasGrupo(grupoId);
+      setTotalDespesas(total);
+    }
+    loadTotal();
+  }, [grupoId]);
+
+  useEffect(() => {
+  async function loadTotalPagoUsuario() {
+    if (!user) return;
+    if (!grupoId) return;
+
+    try {
+      const total = await getTotalPagoPorUsuario(grupoId, user.uid);
+      setTotalPago(total);
+    } catch (err) {
+      console.error("Erro ao calcular total pago pelo usuário:", err);
+    }
+  }
+
+    loadTotalPagoUsuario();
+  }, [user, grupoId, despesas]);
+
+
 
   const removerAcentos = (str: string) =>
     (str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -246,7 +293,7 @@ export default function DetalhesGrupo({ route, navigation }: any) {
 
   const calcularTotalDespesas = () => {
     if (group?.totalGasto != null) return group.totalGasto;
-    return DESPESA.reduce((soma, item) => soma + item.despesa, 0);
+    return despesas.reduce((soma, item) => soma + item.gasto, 0);
   };
 
   const meuSaldo =
@@ -292,11 +339,11 @@ export default function DetalhesGrupo({ route, navigation }: any) {
           <View style={s.cardsRow}>
             <View style={[s.metricCard, { marginRight: 12 }]}>
               <Text style={s.metricLabel}>Total gasto</Text>
-              <Text style={s.metricValue}>{calcularTotalDespesas()}€</Text>
+              <Text style={s.metricValue}>{totalDespesas}€</Text>
             </View>
             <View style={s.metricCard}>
               <Text style={s.metricLabel}>Você pagou</Text>
-              <Text style={s.metricValue}>–</Text>
+              <Text style={s.metricValue}>{totalPago}€</Text>
             </View>
           </View>
 
@@ -315,12 +362,28 @@ export default function DetalhesGrupo({ route, navigation }: any) {
           </View>
 
           <View style={{ paddingTop: 12, paddingBottom: 16 }}>
-            {DESPESA.map((item) => (
+            {despesas.map((item) => (
               <View key={item.id} style={{ marginBottom: 12 }}>
-                <Item item={item} navigation={navigation} />
+                <Item item={item} navigation={navigation} grupoId={grupoId} membros={amigosDoGrupo}/>
               </View>
             ))}
           </View>
+
+          <View style={{ flexDirection: "row", gap: 10, padding: 16, alignItems: "center" }}>
+            <Button title="Nova despesa" onPress={() => navigation.navigate("DespesaForm", { grupoId, membros: amigosDoGrupo })} style={s.botao} />
+            <Button 
+              title="Liquidar conta" 
+              onPress={() => {
+                const totalDespesas = calcularTotalDespesas();
+                navigation.navigate("Pagamento", { tipoPagamento: "total", valorDivida: totalDespesas });
+              }} 
+              variant="outline" 
+              style={s.botao} 
+            />
+          </View>
+          <TouchableOpacity>
+            <Text style={s.exportar}>Exportar relatório</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -374,13 +437,13 @@ export default function DetalhesGrupo({ route, navigation }: any) {
   );
 }
 
-function Item({ item, navigation }: { item: DetalhesGrupo; navigation: any }) {
+function Item({ item, navigation, grupoId, membros }: { item: DetalhesGrupo; navigation: any; grupoId: string; membros: Amigo[] }) {
   return (
     <TouchableOpacity
       activeOpacity={0.8}
       style={s.activityCard}
       onPress={() =>
-        navigation.navigate("DetalheDespesa", { despesaId: item.id, title: item.title })
+        navigation.navigate("DetalheDespesa", { despesa: item })
       }
     >
       <View style={s.avatar} />
@@ -388,7 +451,7 @@ function Item({ item, navigation }: { item: DetalhesGrupo; navigation: any }) {
       <View style={{ flex: 1 }}>
         <Text style={s.activityTitle}>{item.title}</Text>
         <Text style={s.activitySub}>
-          {item.despesa}€ • {item.pessoaPagou} • {item.divisao}
+          {item.gasto}€ • {item.divisao}
         </Text>
       </View>
 
@@ -396,18 +459,9 @@ function Item({ item, navigation }: { item: DetalhesGrupo; navigation: any }) {
         onPress={() =>
           navigation.navigate("DespesaForm", {
             modo: "editar",
-            despesa: {
-              descricao: item.title,
-              valorTotal: item.despesa.toString(),
-              pagador: item.pessoaPagou,
-              abaTipo: item.divisao,
-              abaDiferente: "Valor",
-              valoresIndividuais: [
-                { id: "1", nome: "João", valor: "40" },
-                { id: "2", nome: "Maria", valor: "30" },
-                { id: "3", nome: "Pedro", valor: "30" },
-              ],
-            },
+            grupoId,
+            despesa: item,
+            membros
           })
         }
       >

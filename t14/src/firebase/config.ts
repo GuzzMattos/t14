@@ -1,8 +1,9 @@
 import { initializeApp } from "firebase/app";
 //@ts-ignore - getReactNativePersistence existe no bundle React Native
-import { initializeAuth, getReactNativePersistence,} from "firebase/auth";
+import { initializeAuth, getReactNativePersistence, browserLocalPersistence} from "firebase/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getFirestore } from "firebase/firestore";
+import {Platform} from "react-native"
 
 const firebaseConfig = {
   apiKey: "AIzaSyApBq3rACuMoON2rs390rZNR0_Tvxy_iY4",
@@ -16,7 +17,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage),
+  persistence: 
+    Platform.OS === "web"
+      ? browserLocalPersistence
+      : getReactNativePersistence(AsyncStorage),
 });
 
 const db = getFirestore(app);

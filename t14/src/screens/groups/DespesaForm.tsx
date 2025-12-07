@@ -1,9 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, ScrollView, Alert } from "react-native";
+import { View, Text, StyleSheet, FlatList, ScrollView, Alert, TouchableOpacity, Modal, ActivityIndicator } from "react-native";
 import Input from "@/components/Input";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
 import Tab from "@/components/Tab";
+import { collection, addDoc, setDoc, doc, updateDoc, query, where, onSnapshot } from "firebase/firestore"; 
+import { db } from "@/firebase/config"
+import { createDespesaInFirestore, updateDespesaInFirestore, deleteDespesaFromFirestore } from "@/firebase/despesa";
+import { DespesaTipo, DespesaDiferente } from "@/types/Despesa";
+import { Ionicons } from "@expo/vector-icons";
 
 type Pessoa = {
   id: string;
@@ -12,35 +17,65 @@ type Pessoa = {
 };
 
 export default function DespesaForm({ route, navigation }: any) {
-  const { modo, despesa } = route.params || {};
+  const { modo, despesa, grupoId, membros } = route.params || {};
 
   const [descricao, setDescricao] = useState<string>();
   const [valorTotal, setValorTotal] = useState<string>();
   const [pagador, setPagador] = useState<string>();
-  const [abaTipo, setAbaTipo] = useState("Igual");
-  const [abaDiferente, setAbaDiferente] = useState("Valor");
+  const [abaTipo, setAbaTipo] = useState<DespesaTipo>("Igual");
+  const [abaDiferente, setAbaDiferente] = useState<DespesaDiferente>("Valor");
+  const [openSelect, setOpenSelect] = useState(false);
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
 
-  const [valoresIndividuais, setValoresIndividuais] = useState<Pessoa[]>([
-    { id: "1", nome: "João", valor: "" },
-    { id: "2", nome: "Maria", valor: "" },
-    { id: "3", nome: "Pedro", valor: "" },
-  ]);
+  const [valoresIndividuais, setValoresIndividuais] = useState<Pessoa[]>(
+    membros?.map((m: any) => ({
+      id: m.id,
+      nome: m.nome,
+      valor: "",
+    })) || []
+  );
+
+  const toggleSelectMember = (id: string) => {
+    setSelectedMembers((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+    );
+  };
 
   const somaDivisoes = () => {
-    return valoresIndividuais.reduce((total, p) => {
-      const valor = parseFloat(p.valor.replace(",", "."));
-      return total + (isNaN(valor) ? 0 : valor);
-    }, 0);
+    if (abaDiferente === "Valor") {
+      return valoresIndividuais.reduce((total, p) => {
+        const valor = parseFloat(p.valor.replace(",", "."));
+        return total + (isNaN(valor) ? 0 : valor);
+      }, 0);
+    }
+
+    if (abaDiferente === "Porcentagem") {
+      return valoresIndividuais.reduce((total, p) => {
+        const perc = parseFloat(p.valor.replace(",", "."));
+        return total + (isNaN(perc) ? 0 : perc);
+      }, 0);
+    }
+    return 0;
   };
 
   const valorTotalNum = parseFloat(valorTotal?.replace(",", ".") || "0");
-  const restante = valorTotalNum - somaDivisoes();
+  let restante;
+
+  if (abaDiferente === "Valor") {
+    restante = valorTotalNum - somaDivisoes();
+  } else {
+    restante = 100 - somaDivisoes();
+  }
 
   useEffect(() => {
+    console.log("Despesa: ", despesa);
+    console.log("Grupo id: ", grupoId);
+    
+    
     if (modo === "editar" && despesa) {
-      setDescricao(despesa.descricao || "");
+      setDescricao(despesa.title || "");
       setValorTotal(despesa.valorTotal || "");
-      setPagador(despesa.pagador || "");
+      setPagador(despesa.quemPagou || "");
       setAbaTipo(despesa.abaTipo || "Igual");
       setAbaDiferente(despesa.abaDiferente || "Valor");
       setValoresIndividuais(despesa.valoresIndividuais || valoresIndividuais);
@@ -52,6 +87,95 @@ export default function DespesaForm({ route, navigation }: any) {
       title: modo === "editar" ? "Editar despesa" : "Nova despesa",
     });
   }, [navigation, modo]);
+
+  useEffect(() => {
+    if (abaTipo === "Igual" && valorTotal && valoresIndividuais.length > 0) {
+      const valorPorPessoa = parseFloat(valorTotal.replace(",", ".")) / valoresIndividuais.length;
+
+      setValoresIndividuais(prev =>
+        prev.map(p => ({ ...p, valor: valorPorPessoa.toString() }))
+      );
+    }
+  }, [abaTipo, valorTotal, valoresIndividuais.length]);
+
+
+  const adicionarDespesa = async () => {
+      if (!descricao || !valorTotal || !pagador) { 
+        Alert.alert("Erro", "Preencha todos os campos obrigatórios!");
+        return;
+      }
+
+      try {
+        console.log("📌 Dados da despesa a serem enviados:", {
+          descricao,
+          valorTotal: parseFloat(valorTotal.replace(",", ".")),
+          pagador,
+          groupId: grupoId,
+          abaTipo,
+          abaDiferente,
+          valoresIndividuais: valoresIndividuais.map(p => ({
+            id: p.id,
+            nome: p.nome,
+            valor: parseFloat(p.valor) || 0
+          }))
+        });
+
+        const despesaId = await createDespesaInFirestore ({
+          descricao,
+          valorTotal: parseFloat(valorTotal.replace(",", ".")),
+          pagador,
+          groupId: grupoId,
+          abaTipo,
+          abaDiferente,
+          valoresIndividuais: valoresIndividuais.map(p => ({
+            id: p.id,
+            nome: p.nome,
+            valor: parseFloat(p.valor.replace(",", ".")) || 0
+          })),
+        });
+
+        console.log("Despesa adicionada com sucesso", despesaId);
+        Alert.alert("Sucesso", "Despesa adicionada com sucesso!");
+        navigation.goBack();
+      } catch (error) {
+        console.error("Erro ao adicionar despesa:", error);
+        Alert.alert("Erro", "Não foi possível adicionar a despesa.");
+      }
+    }
+
+  const atualizarDespesa = async () => {
+    if(!descricao || !valorTotal || !pagador ){
+      Alert.alert("Erro", "Preencha todos os campos!");
+      return;
+    }
+
+    try {
+      if (!despesa?.id) {
+        Alert.alert("Erro", "ID da despesa não encontrada");
+        return;
+      }
+
+      await updateDespesaInFirestore(despesa.id, {
+        descricao,
+        valorTotal: parseFloat(valorTotal.replace(",", ".")),
+        pagador,
+        groupId: grupoId,
+        abaTipo,
+        abaDiferente,
+        valoresIndividuais: valoresIndividuais.map((p) => ({
+          id: p.id,
+          nome: p.nome,
+          valor: parseFloat(p.valor.replace(",", "."))
+        })),
+      });
+
+      Alert.alert("Sucesso", "Despesa atualizada com sucesso!");
+      navigation.goBack();
+    } catch (error) {
+      console.log("Erro ao atualizar despesa: ", error);
+      Alert.alert("Erro", "Não foi possível atualizar a despesa");
+    }
+  }
 
   const pessoasIguais: Pessoa[] = [
     { id: "1", nome: "João", valor: "20€" },
@@ -132,24 +256,51 @@ export default function DespesaForm({ route, navigation }: any) {
           onChangeText={setValorTotal}
           style={s.input}
         />
-        <Input
-          label="Quem pagou"
-          placeholder="ex: João"
-          value={pagador}
-          onChangeText={setPagador}
-          style={s.input}
-        />
+        
+        <View style={{ marginBottom: 16 }}>
+          <Text style={{ color: colors.textDark, fontWeight: "600", marginBottom: 6 }}>
+            Pagador
+          </Text>
 
-        <Tab abas={["Igual", "Diferente"]} abaAtiva={abaTipo} onChange={setAbaTipo} />
+          <View style={s.chipsContainer}>
+            {selectedMembers.map((id) => {
+              const membro = membros.find((m: any) => m.id === id);
+              if (!membro) return null;
+              return (
+                <View key={id} style={s.chip}>
+                  <Text style={s.chipText}>{membro.nome}</Text>
+
+                  <TouchableOpacity
+                    style={s.chipRemove}
+                    onPress={() => toggleSelectMember(id)}
+                  >
+                    <Ionicons name="close" size={14} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+
+            <TouchableOpacity
+              style={[s.chip, s.chipAdd]}
+              onPress={() => setOpenSelect(true)}
+            >
+              <Ionicons name="add" size={16} color="#fff" />
+              <Text style={[s.chipText, { color: "#fff", marginLeft: 4 }]}>
+                Selecionar
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+        <Tab<DespesaTipo>
+          abas={["Igual", "Diferente"]}
+          abaAtiva={abaTipo}
+          onChange={setAbaTipo}
+        />
 
         {abaTipo === "Igual" && (
           <FlatList
-            data={valoresIndividuais.map((p) => ({
-              ...p,
-              valor: valorTotal
-                ? (parseFloat(valorTotal.replace(",", ".")) / valoresIndividuais.length).toFixed(2) + "€"
-                : "0€",
-            }))}
+            data={valoresIndividuais}
             keyExtractor={(item) => item.id}
             renderItem={renderPessoaIgual}
             contentContainerStyle={{ marginTop: 12 }}
@@ -158,7 +309,7 @@ export default function DespesaForm({ route, navigation }: any) {
 
         {abaTipo === "Diferente" && (
           <View style={{ marginTop: 12 }}>
-            <Tab
+            <Tab<DespesaDiferente>
               abas={["Valor", "Porcentagem"]}
               abaAtiva={abaDiferente}
               onChange={setAbaDiferente}
@@ -172,17 +323,24 @@ export default function DespesaForm({ route, navigation }: any) {
           </View>
         )}
 
-        {abaTipo === "Diferente" &&(
+        {abaTipo === "Diferente" && (
           <Text style={{ marginTop: 12, fontWeight: "600", color: restante < 0 ? "red" : "#6B7280" }}>
-            {restante >= 0 
-              ? `Falta distribuir: ${restante.toFixed(2)}€` 
-              : `Excedeu o valor em ${Math.abs(restante).toFixed(2)}€`}
+            {abaDiferente === "Valor" ? (
+              restante >= 0
+                ? `Falta distribuir: ${restante.toFixed(2)}€`
+                : `Excedeu o valor em ${Math.abs(restante).toFixed(2)}€`
+            ) : (
+              restante >= 0
+                ? `Falta distribuir: ${restante.toFixed(2)}%`
+                : `Excedeu a porcentagem em ${Math.abs(restante).toFixed(2)}%`
+            )}
           </Text>
         )}
 
         <Button
           title={modo === "editar" ? "Salvar alterações" : "Adicionar despesa"}
           style={{ marginTop: 16 }}
+          onPress={modo === "editar" ? atualizarDespesa : adicionarDespesa}
         />
 
         {modo === "editar" && (
@@ -198,8 +356,20 @@ export default function DespesaForm({ route, navigation }: any) {
                   {
                     text: "Excluir",
                     style: "destructive",
-                    onPress: () => {
-                      Alert.alert("Sucesso", "Despesa excluída com sucesso!");
+                    onPress: async() => {
+                      try {
+                        if(!despesa?.id) {
+                          Alert.alert("Erro", "ID não encontrado");
+                          return;
+                        }
+
+                        await deleteDespesaFromFirestore(despesa.id);
+                        Alert.alert("Sucesso", "Despesa excluída com sucesso!");
+                        navigation.goBack();
+                      } catch (error) {
+                        console.log("Erro ao excluir despesa: ", error);
+                        Alert.alert("Erro", "Não foi possível excluir a despesa");           
+                      }          
                     },
                   },
                 ]
@@ -207,6 +377,54 @@ export default function DespesaForm({ route, navigation }: any) {
             }}
           />
         )}
+        <Modal visible={openSelect} animationType="slide" transparent>
+          <View style={s.modalOverlay}>
+            <View style={s.modalContent}>
+              <Text style={s.modalTitle}>Selecione os membros</Text>
+
+              <View style={{ maxHeight: 340 }}>
+                {!membros || membros.length === 0 ? (
+                  <View style={{ padding: 16, alignItems: "center" }}>
+                    <ActivityIndicator color="white" />
+                  </View>
+                ) : (
+                  membros.map((m: any) => {
+                    const isPagador = pagador === m.id;
+                    return (
+                      <TouchableOpacity
+                        key={m.id}
+                        style={{
+                          paddingVertical: 10,
+                          paddingHorizontal: 12,
+                          borderBottomWidth: 1,
+                          borderBottomColor: "#444",
+                        }}
+                        onPress={() => setPagador(m.id)}
+                      >
+                        <Text style={{ color: "white" }}>
+                          {isPagador ? "✔️ " : "○ "} {m.nome}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </View>
+
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 18 }}>
+                <Button
+                  title="Fechar"
+                  onPress={() => setOpenSelect(false)}
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  title="Confirmar"
+                  onPress={() => setOpenSelect(false)}
+                  style={{ flex: 1 }}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </ScrollView>
   );
@@ -243,5 +461,51 @@ const s = StyleSheet.create({
   botaoApagar: {
     backgroundColor: "red",
     marginTop: 12,
+  },
+  chipsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F5EEDC",
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  chipText: {
+    color: colors.textDark,
+    fontSize: 13,
+  },
+  chipRemove: {
+    marginLeft: 6,
+    backgroundColor: "red",
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  chipAdd: {
+    backgroundColor: colors.primary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "#222",
+    borderRadius: 12,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "white",
+    marginBottom: 12,
   },
 });

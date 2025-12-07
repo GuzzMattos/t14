@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState, useEffect} from "react";
 import { View, Text, StyleSheet, FlatList } from "react-native";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
+import { getDespesaFromFirestore,  } from "@/services/despesa";
 
 type Pessoa = {
   id: string;
@@ -23,36 +24,53 @@ const renderPessoaIgual = ({ item }: { item: Pessoa }) => (
 );
 
 export default function DetalheDespesa({ route, navigation }: any) {
-  const { title } = route.params;
+  const { despesa } = route.params;
+  const [despesaFirebase, setDespesaFirebase] = useState<any>(null);
+  console.log(despesa);
+
+  useEffect(() => {
+    async function loadDespesa() {
+      const data = await getDespesaFromFirestore(despesa.id);
+      if (data) setDespesaFirebase(data);
+    }
+    loadDespesa();
+  }, [despesa.id])
+
+  console.log("DESPESA: ", despesaFirebase);
+  
+  if (!despesaFirebase) {
+    return <Text>Carregando...</Text>;
+  }
 
   return (
     <View style={s.container}>
       <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-        <Text style={s.title}>{title}</Text>
+        <Text style={s.title}>{despesa.title}</Text>
         <View style={s.divider} />
       </View>
 
       <View style={[s.metricCard, { marginBottom: 12 }]}>
         <View style={s.row}>
-          <Text style={s.metricLabel}>Grupo</Text>
-          <Text style={s.metricValue}>Viagem</Text>
-        </View>
-        <View style={s.row}>
           <Text style={s.metricLabel}>Valor Total</Text>
-          <Text style={s.metricValue}>1000€</Text>
+          <Text style={s.metricValue}>{despesa.gasto}€</Text>
         </View>
         <View style={s.row}>
           <Text style={s.metricLabel}>Quem pagou</Text>
-          <Text style={s.metricValue}>João</Text>
+          <Text style={s.metricValue}>{despesa.quemPagou}</Text>
         </View>
       </View>
 
       <View style={[s.metricCard, { marginBottom: 12 }]}>
         <Text style={[s.metricLabel, { marginBottom: 8 }]}>Divisão</Text>
         <FlatList
-          data={pessoasIguais}
+          data={despesaFirebase.valoresIndividuais}
           keyExtractor={(item) => item.id}
-          renderItem={renderPessoaIgual}
+          renderItem={({ item }) => (
+            <View style={s.row}>
+              <Text style={s.metricLabel}>{item.nome}</Text>
+              <Text style={s.metricLabel}>{item.valor}€</Text>
+            </View>
+          )}
           contentContainerStyle={{ paddingTop: 4 }}
         />
       </View>
