@@ -21,7 +21,7 @@ export default function DespesaForm({ route, navigation }: any) {
 
   const [descricao, setDescricao] = useState<string>();
   const [valorTotal, setValorTotal] = useState<string>();
-  const [pagador, setPagador] = useState<string>();
+  const [pagador, setPagador] = useState<string | null>(null);
   const [abaTipo, setAbaTipo] = useState<DespesaTipo>("Igual");
   const [abaDiferente, setAbaDiferente] = useState<DespesaDiferente>("Valor");
   const [openSelect, setOpenSelect] = useState(false);
@@ -263,22 +263,26 @@ export default function DespesaForm({ route, navigation }: any) {
           </Text>
 
           <View style={s.chipsContainer}>
-            {selectedMembers.map((id) => {
-              const membro = membros.find((m: any) => m.id === id);
-              if (!membro) return null;
-              return (
-                <View key={id} style={s.chip}>
-                  <Text style={s.chipText}>{membro.nome}</Text>
+            {pagador && (
+              (() => {
+                const membro = membros.find((m: any) => m.id === pagador);
+                if (!membro) return null;
 
-                  <TouchableOpacity
-                    style={s.chipRemove}
-                    onPress={() => toggleSelectMember(id)}
-                  >
-                    <Ionicons name="close" size={14} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              );
-            })}
+                return (
+                  <View style={s.chip} key={pagador}>
+                    <Text style={s.chipText}>{membro.nome}</Text>
+
+                    <TouchableOpacity
+                      style={s.chipRemove}
+                      onPress={() => setPagador(null)}
+                    >
+                      <Ionicons name="close" size={14} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })()
+            )}
+
           </View>
 
             <TouchableOpacity
@@ -377,10 +381,11 @@ export default function DespesaForm({ route, navigation }: any) {
             }}
           />
         )}
+
         <Modal visible={openSelect} animationType="slide" transparent>
           <View style={s.modalOverlay}>
             <View style={s.modalContent}>
-              <Text style={s.modalTitle}>Selecione os membros</Text>
+              <Text style={s.modalTitle}>Selecione o pagador</Text>
 
               <View style={{ maxHeight: 340 }}>
                 {!membros || membros.length === 0 ? (
