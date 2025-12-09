@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList } from "react-native";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
 import { getDespesaFromFirestore,  } from "@/services/despesa";
+import { getAllUsers } from "@/services/user";
 
 type Pessoa = {
   id: string;
@@ -26,6 +27,8 @@ const renderPessoaIgual = ({ item }: { item: Pessoa }) => (
 export default function DetalheDespesa({ route, navigation }: any) {
   const { despesa } = route.params;
   const [despesaFirebase, setDespesaFirebase] = useState<any>(null);
+  const [pagadorNome, setPagadorNome] = useState("");
+
   console.log(despesa);
 
   useEffect(() => {
@@ -35,6 +38,19 @@ export default function DetalheDespesa({ route, navigation }: any) {
     }
     loadDespesa();
   }, [despesa.id])
+
+  useEffect(() => {
+    async function loadPagador() {
+      const users = await getAllUsers();
+
+      const pagador = users.find(u => u.id === despesa.quemPagou);
+
+      if (pagador) {
+        setPagadorNome(pagador.name ?? "");
+      }
+    }
+    loadPagador()
+  }, [despesa.quemPagou])
 
   console.log("DESPESA: ", despesaFirebase);
   
@@ -56,7 +72,7 @@ export default function DetalheDespesa({ route, navigation }: any) {
         </View>
         <View style={s.row}>
           <Text style={s.metricLabel}>Quem pagou</Text>
-          <Text style={s.metricValue}>{despesa.quemPagou}</Text>
+          <Text style={s.metricValue}>{pagadorNome}</Text>
         </View>
       </View>
 
