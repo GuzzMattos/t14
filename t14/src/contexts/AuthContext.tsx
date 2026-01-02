@@ -18,6 +18,7 @@ import {
 } from "@/firebase/auth";
 import { createUserInFirestore, getUserFromFirestore } from "@/services/user";
 import { AppUser } from "@/types/User";
+import { registerPushToken } from "@/services/pushNotifications";
 
 
 type AuthContextData = {
@@ -57,9 +58,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             phone: firestoreUser.phone ?? null,
             avatar: firestoreUser.avatar ?? null,
           });
+          // Registrar token de push notifications
+          await registerPushToken(firebaseUser.uid);
         } else {
           // Se não existir no Firestore, usar dados básicos do Auth
           setUser(mapFirebaseUser(firebaseUser));
+          // Registrar token de push notifications
+          await registerPushToken(firebaseUser.uid);
         }
       } else {
         setUser(null);
@@ -85,8 +90,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           avatar: firestoreUser.avatar ?? null,
           notificationsEnabled: firestoreUser.notificationsEnabled ?? true,
         });
+        // Registrar token de push notifications
+        await registerPushToken(appUser.uid);
       } else {
         setUser(appUser);
+        // Registrar token de push notifications
+        await registerPushToken(appUser.uid);
       }
     } finally {
       setLoggingIn(false);

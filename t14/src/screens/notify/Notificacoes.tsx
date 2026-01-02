@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import colors from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/contexts/AuthContext";
@@ -45,42 +46,22 @@ export default function Notificacoes() {
     }
   };
 
-  const handleApproveExpense = async (notification: Notification) => {
-    if (!notification.expenseId || !notification.groupId) return;
+  const handleApproveExpense = async (notification: Notification, approve: boolean) => {
+    if (!notification.expenseId || !notification.groupId || !user) return;
 
-    Alert.alert(
-      "Aprovar despesa",
-      notification.message,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Rejeitar",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await rejectExpense(notification.expenseId!, user!.uid);
-              await deleteNotification(notification.id, user!.uid);
-              Alert.alert("Sucesso", "Despesa rejeitada");
-            } catch (error: any) {
-              Alert.alert("Erro", error.message || "Não foi possível rejeitar a despesa");
-            }
-          },
-        },
-        {
-          text: "Aprovar",
-          onPress: async () => {
-            try {
-              await approveExpense(notification.expenseId!, user!.uid, notification.groupId!);
-              // Deletar a notificação de aprovação pendente após aprovar
-              await deleteNotification(notification.id, user!.uid);
-              Alert.alert("Sucesso", "Despesa aprovada e adicionada ao grupo!");
-            } catch (error: any) {
-              Alert.alert("Erro", error.message || "Não foi possível aprovar a despesa");
-            }
-          },
-        },
-      ]
-    );
+    try {
+      if (approve) {
+        await approveExpense(notification.expenseId, user.uid, notification.groupId);
+        await deleteNotification(notification.id, user.uid);
+        Alert.alert("Sucesso", "Despesa aprovada e adicionada ao grupo!");
+      } else {
+        await rejectExpense(notification.expenseId, user.uid);
+        await deleteNotification(notification.id, user.uid);
+        Alert.alert("Sucesso", "Despesa rejeitada");
+      }
+    } catch (error: any) {
+      Alert.alert("Erro", error.message || `Não foi possível ${approve ? 'aprovar' : 'rejeitar'} a despesa`);
+    }
   };
 
   const handlePaymentConfirmation = async (notification: Notification, confirm: boolean) => {
@@ -178,14 +159,14 @@ export default function Notificacoes() {
 
   if (loading) {
     return (
-      <View style={[s.container, { justifyContent: "center", alignItems: "center" }]}>
+      <SafeAreaView style={[s.container, { justifyContent: "center", alignItems: "center" }]} edges={['top']}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={s.container}>
+    <SafeAreaView style={s.container} edges={['top']}>
       <Text style={s.sectionTitle}>Atividade recente</Text>
 
       {notifications.length === 0 ? (
@@ -212,14 +193,14 @@ export default function Notificacoes() {
           ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 type NotificationItemProps = {
   item: Notification;
   onPress: (notification: Notification) => void;
-  onApproveExpense: (notification: Notification) => void;
+  onApproveExpense: (notification: Notification, approve: boolean) => void;
   onFriendRequest: (notification: Notification, accept: boolean) => void;
   onPaymentConfirmation: (notification: Notification, confirm: boolean) => void;
   formatTime: (timestamp: any) => string;
@@ -264,13 +245,13 @@ function NotificationItem({
           <View style={s.actionButtons}>
             <TouchableOpacity
               style={[s.actionButton, s.rejectButton]}
-              onPress={() => onApproveExpense(item)}
+              onPress={() => onApproveExpense(item, false)}
             >
               <Text style={s.actionButtonText}>Rejeitar</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[s.actionButton, s.approveButton]}
-              onPress={() => onApproveExpense(item)}
+              onPress={() => onApproveExpense(item, true)}
             >
               <Text style={[s.actionButtonText, { color: "#fff" }]}>Aprovar</Text>
             </TouchableOpacity>
@@ -324,7 +305,6 @@ const s = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingHorizontal: 20,
-    paddingTop: 16,
   },
   sectionTitle: {
     fontWeight: "700",

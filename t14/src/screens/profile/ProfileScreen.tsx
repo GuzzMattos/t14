@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ScrollView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import colors from "@/theme/colors";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/contexts/AuthContext";
@@ -135,8 +136,9 @@ export default function ProfileScreen({ navigation }: any) {
   };
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 24 }}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+    <SafeAreaView style={s.container} edges={['top']}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+      <View style={{ paddingHorizontal: 16 }}>
         <Text style={s.title}>Configurações</Text>
         <View style={s.divider} />
       </View>
@@ -145,35 +147,35 @@ export default function ProfileScreen({ navigation }: any) {
       <View style={s.card}>
         <Row
           icon={<Ionicons name="person-circle-outline" size={22} color={colors.textDark} />}
-          label={t("profile.edit")}
+          label="Editar perfil"
           chevron
           onPress={() => navigation.navigate("EditProfile")}
         />
         <Row
           icon={<MaterialCommunityIcons name="account-outline" size={20} color={colors.textDark} />}
-          label={t("profile.name")}
-          value={user?.name || t("profile.notDefined")}
+          label="Nome"
+          value={user?.name || "Não definido"}
         />
         {user?.nickname && (
           <Row
             icon={<MaterialCommunityIcons name="at" size={20} color={colors.textDark} />}
-            label={t("profile.nickname")}
+            label="Nickname"
             value={user.nickname}
           />
         )}
         <Row
           icon={<MaterialCommunityIcons name="phone-outline" size={20} color={colors.textDark} />}
-          label={t("profile.phone")}
+          label="Telefone"
           value={displayPhone(user?.phone)}
         />
         <Row
           icon={<MaterialCommunityIcons name="email-outline" size={20} color={colors.textDark} />}
-          label={t("profile.email")}
+          label="Email"
           value={user?.email || ""}
         />
         <Row
           icon={<MaterialCommunityIcons name="key-outline" size={20} color={colors.textDark} />}
-          label={t("profile.password")}
+          label="Senha"
           value={"••••••••"}
           chevron
           onPress={() => navigation.navigate("ChangePassword")}
@@ -184,15 +186,15 @@ export default function ProfileScreen({ navigation }: any) {
       <View style={s.card}>
         <Row
           icon={<MaterialCommunityIcons name="translate" size={20} color={colors.textDark} />}
-          label={t("profile.language")}
+          label="Idioma"
           value={LANGUAGE_NAMES[language] || "Português (Portugal)"}
           chevron
           onPress={() => {
             Alert.alert(
-              t("profile.language"),
+              "Idioma",
               "Selecione um idioma:",
               [
-                { text: t("common.cancel"), style: "cancel" },
+                { text: "Cancelar", style: "cancel" },
                 {
                   text: "Português",
                   onPress: () => setLanguage("pt"),
@@ -215,7 +217,7 @@ export default function ProfileScreen({ navigation }: any) {
         />
         <Row
           icon={<Ionicons name="notifications-outline" size={20} color={colors.textDark} />}
-          label={t("profile.notifications")}
+          label="Notificações"
           right={
             <Switch
               value={notif}
@@ -232,7 +234,7 @@ export default function ProfileScreen({ navigation }: any) {
       <View style={s.card}>
         <Row
           icon={<Ionicons name="log-out-outline" size={20} color={colors.textDark} />}
-          label={t("profile.logout")}
+          label="Sair"
           chevron
           onPress={async () => {
             try {
@@ -244,7 +246,7 @@ export default function ProfileScreen({ navigation }: any) {
         />
         <Row
           icon={<Ionicons name="person-remove-outline" size={20} color={"#E11D48"} />}
-          label={t("profile.deleteAccount")}
+          label="Apagar conta"
           labelStyle={{ color: "#E11D48", fontWeight: "700" }}
           chevron
           onPress={onRemove}
@@ -258,7 +260,8 @@ export default function ProfileScreen({ navigation }: any) {
         title="Confirmar senha"
         message="Digite sua senha para confirmar a exclusão da conta:"
       />
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

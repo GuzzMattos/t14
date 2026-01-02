@@ -41,6 +41,7 @@ export async function getUserFromFirestore(userId: string): Promise<User | null>
         phone: data.phone ?? undefined,
         avatar: data.avatar ?? undefined,
         notificationsEnabled: data.notificationsEnabled ?? true,
+        pushToken: data.pushToken ?? undefined,
     };
 }
 

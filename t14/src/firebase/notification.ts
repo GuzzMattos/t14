@@ -29,15 +29,11 @@ export type Notification = {
 };
 
 /**
- * Cria uma notificação (verifica se o usuário tem notificações habilitadas)
+ * Cria uma notificação (sempre cria no app, mas push apenas se habilitado)
  */
 export async function createNotification(notification: Omit<Notification, "id" | "createdAt">): Promise<string | null> {
-  // Verificar se o usuário tem notificações habilitadas
-  const enabled = await isNotificationsEnabled(notification.userId);
-  if (!enabled) {
-    console.log("Notificações desabilitadas para o usuário:", notification.userId);
-    return null; // Não cria notificação se estiver desabilitado
-  }
+  // SEMPRE cria a notificação no app (dentro do app)
+  // A flag notificationsEnabled controla apenas push notifications (celular)
 
   const notificationsRef = collection(db, "notifications");
   const notificationRef = doc(notificationsRef);
@@ -49,6 +45,36 @@ export async function createNotification(notification: Omit<Notification, "id" |
     status: notification.status || "UNREAD",
     createdAt: now,
   });
+
+  // Enviar push notification APENAS se o usuário tiver notificações habilitadas
+  try {
+    const enabled = await isNotificationsEnabled(notification.userId);
+    if (enabled) {
+      console.log('🔔 Enviando push notification para:', notification.userId);
+      console.log('📝 Título:', notification.title);
+      console.log('📝 Mensagem:', notification.message);
+      
+      const { sendPushNotification } = await import("@/services/sendPushNotification");
+      await sendPushNotification(
+        notification.userId,
+        notification.title,
+        notification.message,
+        {
+          notificationId: notificationRef.id,
+          type: notification.type,
+          groupId: notification.groupId,
+          expenseId: notification.expenseId,
+          paymentId: notification.paymentId,
+        }
+      );
+    } else {
+      console.log("⚠️  Push notification não enviada - usuário desabilitou notificações:", notification.userId);
+    }
+  } catch (error: any) {
+    console.error("❌ Erro ao enviar push notification:", error);
+    console.error("❌ Stack:", error.stack);
+    // Não falhar se o push não for enviado
+  }
 
   return notificationRef.id;
 }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
 import { getExpenseById, Expense } from "@/firebase/expense";
@@ -127,25 +128,26 @@ export default function DetalheDespesa({ route, navigation }: any) {
 
   if (loading) {
     return (
-      <View style={[s.container, { justifyContent: "center", alignItems: "center" }]}>
+      <SafeAreaView style={[s.container, { justifyContent: "center", alignItems: "center" }]} edges={['top']}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (!expense) {
     return (
-      <View style={s.container}>
+      <SafeAreaView style={s.container} edges={['top']}>
         <Text style={s.title}>Despesa não encontrada</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   const canPay = userDebt > 0 && expense.status === "APPROVED";
 
   return (
-    <ScrollView style={s.container}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+    <SafeAreaView style={s.container} edges={['top']}>
+      <ScrollView>
+      <View style={{ paddingHorizontal: 16 }}>
         <Text style={s.title}>{expense.description || title}</Text>
         <View style={s.divider} />
       </View>
@@ -261,7 +263,8 @@ export default function DetalheDespesa({ route, navigation }: any) {
           </Text>
         </View>
       )}
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

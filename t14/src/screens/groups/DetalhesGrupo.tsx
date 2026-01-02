@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, Pressable, Alert, ScrollView, ActivityIndicator } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -209,8 +210,8 @@ export default function DetalhesGrupo({ route, navigation }: any) {
   }
 
   return (
-    <View style={s.container}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+    <SafeAreaView style={s.container} edges={['top']}>
+      <View style={{ paddingHorizontal: 16 }}>
         <Text style={s.title}>{group?.name || name}</Text>
         <View style={s.divider} />
       </View>
@@ -360,7 +361,7 @@ export default function DetalhesGrupo({ route, navigation }: any) {
           />
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 

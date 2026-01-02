@@ -12,6 +12,7 @@ export type User = {
     phone?: string;
     avatar?: string;
     notificationsEnabled?: boolean;
+    pushToken?: string; // Token para push notifications
 };
 
 /**

@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import Input from "@/components/Input";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import Filter from "@/components/Filter";
-import { useLanguage } from "@/contexts/LanguageContext";
 import { auth, db } from "@/firebase/config";
 import { Group } from "@/types/Group";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
@@ -16,7 +16,6 @@ const OPCOES = [
 ];
 
 export default function Groups({ navigation }: any) {
-  const { t } = useLanguage();
   const [pesquisar, setPesquisar] = useState<string>("");
   const [filtro, setFiltro] = useState<string | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -53,10 +52,10 @@ export default function Groups({ navigation }: any) {
   });
 
   return (
-    <View style={s.container}>
+    <SafeAreaView style={s.container} edges={['top']}>
       <View style={s.topRow}>
         <Input
-          placeholder={t("groups.title") + "..."}
+          placeholder="Grupos..."
           value={pesquisar}
           onChangeText={setPesquisar}
           style={{ width: 325 }}
@@ -88,7 +87,7 @@ export default function Groups({ navigation }: any) {
           }}
         />
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -129,7 +128,6 @@ const s = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingHorizontal: 20,
-    paddingTop: 16,
   },
   activityCard: {
     flexDirection: "row",

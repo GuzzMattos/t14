@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, Alert, TouchableOpacity, Image, ActivityIndicator, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Input from "@/components/Input";
 import Button from "@/components/Button";
@@ -126,9 +127,10 @@ export default function EditProfileScreen({ navigation }: any) {
   };
 
   return (
-    <ScrollView style={s.container}>
-      <Text style={s.title}>Perfil</Text>
-      <View style={s.divider} />
+    <SafeAreaView style={s.container} edges={['top']}>
+      <ScrollView>
+        <Text style={s.title}>Perfil</Text>
+        <View style={s.divider} />
 
       <View style={s.avatarRow}>
         <View style={s.avatarContainer}>
@@ -204,12 +206,13 @@ export default function EditProfileScreen({ navigation }: any) {
         onPress={handleSave}
         disabled={loading || uploading}
       />
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 },
+  container: { flex: 1, backgroundColor: "#fff", paddingHorizontal: 16, paddingBottom: 24 },
   title: { fontSize: 22, fontWeight: "800", color: colors.textDark, textAlign: "center", marginBottom: 10 },
   divider: { height: 1, backgroundColor: colors.border, marginBottom: 14 },
   avatarRow: { flexDirection: "row", alignItems: "center", marginBottom: 16 },

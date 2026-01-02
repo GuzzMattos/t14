@@ -227,9 +227,15 @@ export default function Amigos({ navigation }: AmigosProps) {
 
   const corBorda = erro ? "red" : sucesso ? "green" : "#ccc";
 
-  // Combinar amigos e solicitações pendentes
+  // Combinar amigos e solicitações pendentes, removendo duplicatas
+  // Se alguém já é amigo, não deve aparecer nas solicitações pendentes
   const todosAmigos = useMemo(() => {
-    return [...amigos, ...solicitacoesPendentes];
+    const amigosIds = new Set(amigos.map(a => a.id));
+    // Filtrar solicitações pendentes que já são amigos
+    const solicitacoesFiltradas = solicitacoesPendentes.filter(
+      solicitacao => !amigosIds.has(solicitacao.id)
+    );
+    return [...amigos, ...solicitacoesFiltradas];
   }, [amigos, solicitacoesPendentes]);
 
   const amigosFiltrados = useMemo(() => {
