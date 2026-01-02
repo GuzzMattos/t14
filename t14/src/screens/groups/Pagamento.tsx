@@ -5,32 +5,87 @@ import Input from "@/components/Input";
 import colors from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import DocumentPicker, { types } from "react-native-document-picker"; 
+import { getAllUsers } from "@/services/user";
+import { createPagamentoInFirestore } from "@/firebase/pagamento";
+import { getAuth } from "firebase/auth";
 
 export default function Pagamento({ route }: any) {
   const [valor, setValor] = useState<string>();
   const [metodo, setMetodo] = useState<string>();
   const [comprovativo, setComprovativo] = useState<string>();
   const [comentario, setComentario] = useState<string>();
-  const { tipoPagamento, valorDivida, pessoa } = route.params;
+  const { tipoPagamento, despesa, saldo } = route.params;
   const [mostrarOpcoes, setMostrarOpcoes] = useState(false);
+  const [pagadorNome, setPagadorNome] = useState("");
+  const auth = getAuth();
+  const user = auth.currentUser;
 
   const opcoesPagamento = ["MB WAY", "Dinheiro", "Transferência", "PayPal"];
 
+  if (!user) {
+    return (
+      <View style={s.container}>
+        <Text>Usuário não autenticado</Text>
+      </View>
+    )
+  }
+  
+  useEffect(() => {
+      async function loadPagador() {
+        const users = await getAllUsers();
+  
+        const pagador = users.find(u => u.id === despesa.pagador);
+  
+        if (pagador) {
+          setPagadorNome(pagador.name ?? "");
+        }
+      }
+      loadPagador()
+    }, [despesa.pagador])
 
   useEffect(() => {
     if (tipoPagamento === "total") {
-      setValor(valorDivida.toString());
+      setValor(saldo.toString());
     }
-  }, [tipoPagamento, valorDivida]);
+  }, [tipoPagamento, saldo]);
 
-  const confirmarPagamento = () => {
-    console.log("Dados do pagamento:", { valor, metodo, comprovativo, comentario });
-    Alert.alert("Sucesso", "Pagamento feito com sucesso!");
+  const confirmarPagamento = async () => {
+  try {
+    if (!valor || Number(valor) <= 0) {
+      Alert.alert("Erro", "Informe um valor válido");
+      return;
+    }
+
+    if (Number(valor) > saldo) {
+      Alert.alert("Erro", "O valor não pode ser maior que a dívida");
+      return;
+    }
+
+    if (!metodo) {
+      Alert.alert("Erro", "Selecione um método de pagamento");
+      return;
+    }
+
+    await createPagamentoInFirestore({
+      despesaId: despesa.id,
+      valor: Number(valor),
+      deUsuarioId: user.uid,
+      paraUsuarioId: despesa.pagador,
+      metodoPagamento: metodo,
+      comentario,
+    });
+
+    Alert.alert("Sucesso", "Pagamento registrado com sucesso!");
+    } catch (error: any) {
+      Alert.alert("Erro", error.message ?? "Erro ao registrar pagamento");
+    }
   };
 
   return (
     <View style={s.container}>
-      <Text style={s.title}>Você deve {valorDivida}€ {pessoa ? `para ${pessoa}` : ""}</Text>
+      <Text style={s.title}>
+        Você deve {saldo}€ {pagadorNome ? `para ${pagadorNome}` : ""}
+      </Text>
 
       <Input
         label="Valor que irá pagar (€)"

@@ -68,13 +68,9 @@ export default function DespesaForm({ route, navigation }: any) {
   }
 
   useEffect(() => {
-    console.log("Despesa: ", despesa);
-    console.log("Grupo id: ", grupoId);
-    
-    
     if (modo === "editar" && despesa) {
       setDescricao(despesa.title || "");
-      setValorTotal(despesa.valorTotal || "");
+      setValorTotal(despesa.gasto?.toString() || "");
       setPagador(despesa.quemPagou || "");
       setAbaTipo(despesa.abaTipo || "Igual");
       setAbaDiferente(despesa.abaDiferente || "Valor");
@@ -106,20 +102,6 @@ export default function DespesaForm({ route, navigation }: any) {
       }
 
       try {
-        console.log("📌 Dados da despesa a serem enviados:", {
-          descricao,
-          valorTotal: parseFloat(valorTotal.replace(",", ".")),
-          pagador,
-          groupId: grupoId,
-          abaTipo,
-          abaDiferente,
-          valoresIndividuais: valoresIndividuais.map(p => ({
-            id: p.id,
-            nome: p.nome,
-            valor: parseFloat(p.valor) || 0
-          }))
-        });
-
         const despesaId = await createDespesaInFirestore ({
           descricao,
           valorTotal: parseFloat(valorTotal.replace(",", ".")),
