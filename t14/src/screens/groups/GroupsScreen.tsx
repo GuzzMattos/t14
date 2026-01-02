@@ -112,13 +112,15 @@ function GroupItem({ item, navigation }: { item: Group; navigation: any }) {
         </Text>
       </View>
 
-      <TouchableOpacity
-        onPress={() =>
-          navigation.navigate("GrupoForm", { modo: "editar", grupo: item })
-        }
-      >
-        <Ionicons name="pencil" size={18} color={colors.primary} />
-      </TouchableOpacity>
+      {item.ownerId === auth.currentUser?.uid && (
+        <TouchableOpacity
+          onPress={() =>
+            navigation.navigate("GrupoForm", { modo: "editar", grupo: item })
+          }
+        >
+          <Ionicons name="pencil" size={18} color={colors.primary} />
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 }

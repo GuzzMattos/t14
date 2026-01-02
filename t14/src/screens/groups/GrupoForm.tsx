@@ -12,10 +12,11 @@ import {
 import Input from "@/components/Input";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
-import { createGroupInFirestore } from "@/firebase/group";
+import { createGroupInFirestore, updateGroup, deleteGroup } from "@/firebase/group";
 import { auth, db } from "@/firebase/config";
 import { getAllUsers } from "@/firebase/user";
 import { doc, updateDoc, Timestamp } from "firebase/firestore";
+import { useAuth } from "@/contexts/AuthContext";
 
 type FirebaseUserItem = {
   id: string;
@@ -25,18 +26,20 @@ type FirebaseUserItem = {
 };
 
 export default function GrupoForm({ route, navigation }: any) {
+  const { user } = useAuth();
   const [nomeGrupo, setNomeGrupo] = useState<string>("");
   const [descricao, setDescricao] = useState<string>("");
   const [allUsers, setAllUsers] = useState<FirebaseUserItem[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]); // emails
   const [openSelect, setOpenSelect] = useState(false);
   const [loadingCreate, setLoadingCreate] = useState(false);
+  const [loadingDelete, setLoadingDelete] = useState(false);
   const { modo, grupo } = route.params || {};
 
   useEffect(() => {
-    if (modo === "editar") {
-      setNomeGrupo(grupo?.title || "");
-      setDescricao(grupo?.descricao || "");
+    if (modo === "editar" && grupo) {
+      setNomeGrupo(grupo?.name || grupo?.title || "");
+      setDescricao(grupo?.description || grupo?.descricao || "");
     }
   }, [modo, grupo]);
 
@@ -62,6 +65,79 @@ export default function GrupoForm({ route, navigation }: any) {
   const toggleSelectEmail = (email: string) => {
     setSelectedMembers((prev) =>
       prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email]
+    );
+  };
+
+  const handleUpdateGroup = async () => {
+    if (!user || !grupo) {
+      Alert.alert("Erro", "Você precisa estar logado e o grupo deve existir.");
+      return;
+    }
+
+    // Verificar se é o dono
+    if (grupo.ownerId !== user.uid) {
+      Alert.alert("Erro", "Apenas o dono do grupo pode editar.");
+      return;
+    }
+
+    if (!nomeGrupo || !nomeGrupo.trim()) {
+      Alert.alert("Erro", "O nome do grupo é obrigatório.");
+      return;
+    }
+
+    try {
+      setLoadingCreate(true);
+      
+      await updateGroup(grupo.id, {
+        name: nomeGrupo.trim(),
+        description: descricao?.trim() || "",
+      }, user.uid);
+
+      Alert.alert("Sucesso", "Grupo atualizado com sucesso!");
+      navigation.goBack();
+    } catch (error: any) {
+      console.error("Erro ao atualizar grupo:", error);
+      Alert.alert("Erro", error?.message || "Não foi possível atualizar o grupo");
+    } finally {
+      setLoadingCreate(false);
+    }
+  };
+
+  const handleDeleteGroup = () => {
+    if (!user || !grupo) {
+      Alert.alert("Erro", "Você precisa estar logado e o grupo deve existir.");
+      return;
+    }
+
+    // Verificar se é o dono
+    if (grupo.ownerId !== user.uid) {
+      Alert.alert("Erro", "Apenas o dono do grupo pode excluir.");
+      return;
+    }
+
+    Alert.alert(
+      "Excluir grupo",
+      "Tem certeza que deseja excluir este grupo? Esta ação não pode ser desfeita.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Excluir",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setLoadingDelete(true);
+              await deleteGroup(grupo.id, user.uid);
+              Alert.alert("Sucesso", "Grupo excluído com sucesso!");
+              navigation.goBack();
+            } catch (error: any) {
+              console.error("Erro ao excluir grupo:", error);
+              Alert.alert("Erro", error?.message || "Não foi possível excluir o grupo");
+            } finally {
+              setLoadingDelete(false);
+            }
+          },
+        },
+      ]
     );
   };
 
@@ -170,52 +246,40 @@ export default function GrupoForm({ route, navigation }: any) {
         style={s.input}
       />
 
-      {/* campo de seleção (mantive o input original escondido caso você precise) */}
-      <View style={{ marginBottom: 12 }}>
-        <Button title="Selecionar membros" onPress={() => setOpenSelect(true)} />
-        {selectedMembers.length > 0 && (
-          <View style={{ marginTop: 8 }}>
-            {selectedMembers.map((email) => (
-              <Text key={email} style={{ color: "white" }}>
-                • {email}
-              </Text>
-            ))}
-          </View>
-        )}
-      </View>
+      {/* campo de seleção - apenas ao criar novo grupo */}
+      {modo !== "editar" && (
+        <View style={{ marginBottom: 12 }}>
+          <Button title="Selecionar membros" onPress={() => setOpenSelect(true)} />
+          {selectedMembers.length > 0 && (
+            <View style={{ marginTop: 8 }}>
+              {selectedMembers.map((email) => (
+                <Text key={email} style={{ color: "white" }}>
+                  • {email}
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
 
       <Button
-        title={modo === "editar" ? "Salvar alterações" : loadingCreate ? "Criando..." : "Criar grupo"}
+        title={modo === "editar" ? (loadingCreate ? "Salvando..." : "Salvar alterações") : (loadingCreate ? "Criando..." : "Criar grupo")}
         onPress={() => {
           if (modo === "editar") {
-            Alert.alert("Sucesso", "Editar ainda não implementado.");
+            handleUpdateGroup();
           } else {
             handleCreateGroup();
           }
         }}
-        disabled={loadingCreate}
+        disabled={loadingCreate || loadingDelete}
       />
 
-      {modo === "editar" && (
+      {modo === "editar" && grupo && user && grupo.ownerId === user.uid && (
         <Button
-          title="Excluir grupo"
+          title={loadingDelete ? "Excluindo..." : "Excluir grupo"}
           style={s.botaoApagar}
-          onPress={() => {
-            Alert.alert(
-              "Excluir grupo",
-              "Tem certeza que deseja excluir este grupo?",
-              [
-                { text: "Cancelar", style: "cancel" },
-                {
-                  text: "Excluir",
-                  style: "destructive",
-                  onPress: () => {
-                    Alert.alert("Sucesso", "Grupo excluído com sucesso!");
-                  },
-                },
-              ]
-            );
-          }}
+          onPress={handleDeleteGroup}
+          disabled={loadingCreate || loadingDelete}
         />
       )}
 

@@ -1,5 +1,5 @@
 import { db } from "./config";
-import { collection, addDoc, Timestamp, doc, updateDoc, getDoc, arrayRemove, FieldValue } from "firebase/firestore";
+import { collection, addDoc, Timestamp, doc, updateDoc, getDoc, deleteDoc, arrayRemove, FieldValue } from "firebase/firestore";
 
 export interface CreateGroupPayload {
     name: string;
@@ -163,4 +163,68 @@ export async function addMembersToGroup(
         updatedAt: now,
         lastActivityAt: now,
     });
+}
+
+/**
+ * Atualiza os dados de um grupo (nome, descrição)
+ */
+export async function updateGroup(
+    groupId: string,
+    updates: { name?: string; description?: string },
+    currentUserId: string
+): Promise<void> {
+    const groupRef = doc(db, "group", groupId);
+    const groupSnap = await getDoc(groupRef);
+
+    if (!groupSnap.exists()) {
+        throw new Error("Grupo não encontrado");
+    }
+
+    const groupData = groupSnap.data();
+
+    // Verificar se o usuário atual é o dono
+    if (groupData.ownerId !== currentUserId) {
+        throw new Error("Apenas o dono do grupo pode editar");
+    }
+
+    const now = Timestamp.now();
+    const updateData: any = {
+        updatedAt: now,
+        lastActivityAt: now,
+    };
+
+    if (updates.name !== undefined) {
+        updateData.name = updates.name.trim();
+    }
+
+    if (updates.description !== undefined) {
+        updateData.description = updates.description.trim() || "";
+    }
+
+    await updateDoc(groupRef, updateData);
+}
+
+/**
+ * Deleta um grupo (apenas o dono pode deletar)
+ */
+export async function deleteGroup(
+    groupId: string,
+    currentUserId: string
+): Promise<void> {
+    const groupRef = doc(db, "group", groupId);
+    const groupSnap = await getDoc(groupRef);
+
+    if (!groupSnap.exists()) {
+        throw new Error("Grupo não encontrado");
+    }
+
+    const groupData = groupSnap.data();
+
+    // Verificar se o usuário atual é o dono
+    if (groupData.ownerId !== currentUserId) {
+        throw new Error("Apenas o dono do grupo pode excluir");
+    }
+
+    // Deletar o grupo
+    await deleteDoc(groupRef);
 }

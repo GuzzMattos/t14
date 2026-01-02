@@ -209,10 +209,27 @@ export default function DetalhesGrupo({ route, navigation }: any) {
     );
   }
 
+  const isOwner = user && group && group.ownerId === user.uid;
+
   return (
     <SafeAreaView style={s.container} edges={['top']}>
-      <View style={{ paddingHorizontal: 16 }}>
+      <View style={{ paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <Text style={s.title}>{group?.name || name}</Text>
+        {isOwner && (
+          <TouchableOpacity
+            onPress={() => {
+              navigation.navigate("GrupoForm", {
+                modo: "editar",
+                grupo: group,
+              });
+            }}
+            style={{ padding: 8 }}
+          >
+            <Ionicons name="pencil" size={24} color={colors.primary} />
+          </TouchableOpacity>
+        )}
+      </View>
+      <View style={{ paddingHorizontal: 16 }}>
         <View style={s.divider} />
       </View>
 
