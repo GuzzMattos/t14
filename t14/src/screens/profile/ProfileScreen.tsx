@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,13 +10,36 @@ import {
 import colors from "@/theme/colors";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/contexts/AuthContext";
+import { updateUserInFirestore } from "@/services/user";
 
 export default function ProfileScreen({ navigation }: any) {
-  const [email, setEmail] = useState("rogerio@gmail.com");
-  const [name, setName] = useState("Rogério");
-  const [phone, setPhone] = useState("+351 123 456 789");
-  const [notif, setNotif] = useState(true);
-  const { logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
+  const [notif, setNotif] = useState(user?.notificationsEnabled ?? true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setNotif(user?.notificationsEnabled ?? true);
+  }, [user]);
+
+  const handleToggleNotifications = async (value: boolean) => {
+    if (!user) return;
+    
+    setSaving(true);
+    try {
+      await updateUserInFirestore(user.uid, {
+        notificationsEnabled: value,
+      }, user.email);
+      
+      setNotif(value);
+      await refreshUser();
+    } catch (error) {
+      console.error("Erro ao atualizar preferências:", error);
+      Alert.alert("Erro", "Não foi possível atualizar as preferências de notificação");
+      setNotif(!value); // Reverter o estado
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const onRemove = () => {
     Alert.alert("Queres apagar a conta?", "", [
@@ -43,17 +66,24 @@ export default function ProfileScreen({ navigation }: any) {
         <Row
           icon={<MaterialCommunityIcons name="account-outline" size={20} color={colors.textDark} />}
           label="Nome"
-          value={name}
+          value={user?.name || "Não definido"}
         />
+        {user?.nickname && (
+          <Row
+            icon={<MaterialCommunityIcons name="at" size={20} color={colors.textDark} />}
+            label="Nickname"
+            value={user.nickname}
+          />
+        )}
         <Row
           icon={<MaterialCommunityIcons name="phone-outline" size={20} color={colors.textDark} />}
           label="Telefone"
-          value={phone}
+          value={user?.phone || "Não definido"}
         />
         <Row
           icon={<MaterialCommunityIcons name="email-outline" size={20} color={colors.textDark} />}
           label="Email"
-          value={email}
+          value={user?.email || ""}
         />
         <Row
           icon={<MaterialCommunityIcons name="key-outline" size={20} color={colors.textDark} />}
@@ -74,12 +104,13 @@ export default function ProfileScreen({ navigation }: any) {
           onPress={() => {}}
         />
         <Row
-          icon={<Ionicons name="lock-open-outline" size={20} color={colors.textDark} />}
+          icon={<Ionicons name="notifications-outline" size={20} color={colors.textDark} />}
           label="Notificações"
           right={
             <Switch
               value={notif}
-              onValueChange={setNotif}
+              onValueChange={handleToggleNotifications}
+              disabled={saving}
               thumbColor={notif ? "#fff" : undefined}
               trackColor={{ true: "#34C759", false: "#e5e7eb" }}
             />

@@ -6,6 +6,9 @@ import {
   sendPasswordResetEmail,
   signOut,
   updateProfile,
+  updatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
 } from "firebase/auth";
 
 import { AppUser } from "@/types/User";
@@ -48,4 +51,27 @@ export async function logoutFirebase() {
 
 export async function sendPasswordReset(email: string) {
   await sendPasswordResetEmail(auth, email);
+}
+
+/**
+ * Atualiza a senha do usuário autenticado
+ * Requer reautenticação antes de atualizar
+ */
+export async function updateUserPassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    throw new Error("Usuário não autenticado");
+  }
+
+  // Criar credencial para reautenticação
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  
+  // Reautenticar o usuário
+  await reauthenticateWithCredential(user, credential);
+  
+  // Atualizar a senha
+  await updatePassword(user, newPassword);
 }

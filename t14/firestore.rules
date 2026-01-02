@@ -1,0 +1,134 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function para verificar se o usuário está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function para verificar se o usuário é o dono do documento
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper function para verificar se o usuário é membro de um grupo
+    function isGroupMember(groupId) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/group/$(groupId)) &&
+             get(/databases/$(database)/documents/group/$(groupId)).data.memberIds.hasAny([request.auth.uid]);
+    }
+    
+    // Coleção: users
+    match /users/{userId} {
+      // Usuários podem ler seu próprio perfil
+      allow read: if isOwner(userId);
+      
+      // Usuários podem atualizar seu próprio perfil
+      allow update: if isOwner(userId);
+      
+      // Usuários podem criar seu próprio perfil
+      allow create: if isOwner(userId);
+      
+      // Qualquer usuário autenticado pode ler outros usuários (para buscar amigos)
+      allow read: if isAuthenticated();
+    }
+    
+    // Coleção: friends
+    match /friends/{friendId} {
+      // Usuários podem ler suas próprias relações de amizade
+      allow read: if isAuthenticated() && 
+                     (resource.data.userId == request.auth.uid || 
+                      resource.data.friendId == request.auth.uid);
+      
+      // Usuários podem criar relações de amizade onde são o userId
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid;
+      
+      // Usuários podem atualizar suas próprias relações de amizade
+      allow update: if isAuthenticated() && 
+                      (resource.data.userId == request.auth.uid || 
+                       resource.data.friendId == request.auth.uid);
+    }
+    
+    // Coleção: friendRequests
+    match /friendRequests/{requestId} {
+      // Usuários podem ler solicitações que enviaram ou receberam
+      allow read: if isAuthenticated() && 
+                     (resource.data.fromUserId == request.auth.uid || 
+                      resource.data.toUserId == request.auth.uid);
+      
+      // Usuários podem criar solicitações onde são o remetente
+      allow create: if isAuthenticated() && 
+                       request.resource.data.fromUserId == request.auth.uid;
+      
+      // Usuários podem atualizar solicitações que receberam (para aceitar/rejeitar)
+      allow update: if isAuthenticated() && 
+                      resource.data.toUserId == request.auth.uid;
+    }
+    
+    // Coleção: notifications
+    match /notifications/{notificationId} {
+      // Usuários podem ler suas próprias notificações
+      allow read: if isAuthenticated() && 
+                     resource.data.userId == request.auth.uid;
+      
+      // Qualquer usuário autenticado pode criar notificações (o sistema cria para outros usuários)
+      allow create: if isAuthenticated();
+      
+      // Usuários podem atualizar suas próprias notificações (marcar como lida)
+      allow update: if isAuthenticated() && 
+                      resource.data.userId == request.auth.uid;
+      
+      // Usuários podem deletar suas próprias notificações
+      allow delete: if isAuthenticated() && 
+                      resource.data.userId == request.auth.uid;
+    }
+    
+    // Coleção: group
+    match /group/{groupId} {
+      // Usuários podem ler grupos dos quais são membros
+      allow read: if isAuthenticated() && 
+                     (resource.data.memberIds.hasAny([request.auth.uid]) || 
+                      resource.data.ownerId == request.auth.uid);
+      
+      // Usuários podem criar grupos
+      allow create: if isAuthenticated() && 
+                       request.resource.data.ownerId == request.auth.uid;
+      
+      // Apenas o dono pode atualizar o grupo
+      allow update: if isAuthenticated() && 
+                      (resource.data.ownerId == request.auth.uid ||
+                       request.resource.data.ownerId == request.auth.uid);
+      
+      // Apenas o dono pode deletar o grupo
+      allow delete: if isAuthenticated() && 
+                      resource.data.ownerId == request.auth.uid;
+    }
+    
+    // Coleção: expenses
+    match /expenses/{expenseId} {
+      // Usuários podem ler despesas de grupos dos quais são membros
+      allow read: if isAuthenticated() && 
+                     exists(/databases/$(database)/documents/group/$(resource.data.groupId)) &&
+                     get(/databases/$(database)/documents/group/$(resource.data.groupId)).data.memberIds.hasAny([request.auth.uid]);
+      
+      // Usuários podem criar despesas em grupos dos quais são membros
+      allow create: if isAuthenticated() && 
+                       exists(/databases/$(database)/documents/group/$(request.resource.data.groupId)) &&
+                       get(/databases/$(database)/documents/group/$(request.resource.data.groupId)).data.memberIds.hasAny([request.auth.uid]);
+      
+      // Apenas o dono do grupo pode atualizar despesas (aprovar/rejeitar)
+      allow update: if isAuthenticated() && 
+                      exists(/databases/$(database)/documents/group/$(resource.data.groupId)) &&
+                      get(/databases/$(database)/documents/group/$(resource.data.groupId)).data.ownerId == request.auth.uid;
+      
+      // Apenas o criador ou dono do grupo pode deletar despesas
+      allow delete: if isAuthenticated() && 
+                      (resource.data.createdBy == request.auth.uid ||
+                       (exists(/databases/$(database)/documents/group/$(resource.data.groupId)) &&
+                        get(/databases/$(database)/documents/group/$(resource.data.groupId)).data.ownerId == request.auth.uid));
+    }
+  }
+}
+

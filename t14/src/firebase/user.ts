@@ -7,6 +7,11 @@ export type User = {
     id: string;
     email: string;
     password?: string; // opcional no Firestore
+    name?: string;
+    nickname?: string;
+    phone?: string;
+    avatar?: string;
+    notificationsEnabled?: boolean;
 };
 
 /**

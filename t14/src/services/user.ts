@@ -13,7 +13,11 @@ export async function createUserInFirestore(user: AppUser) {
     await setDoc(ref, {
         id: user.uid,
         email: user.email,
-        name: user.name,
+        name: user.name ?? null,
+        nickname: user.nickname ?? null,
+        phone: user.phone ?? null,
+        avatar: user.avatar ?? null,
+        notificationsEnabled: user.notificationsEnabled ?? true,
     });
 }
 
@@ -32,16 +36,36 @@ export async function getUserFromFirestore(userId: string): Promise<User | null>
         id: userId,
         email: data.email,
         password: data.password ?? undefined,
+        name: data.name ?? undefined,
+        nickname: data.nickname ?? undefined,
+        phone: data.phone ?? undefined,
+        avatar: data.avatar ?? undefined,
+        notificationsEnabled: data.notificationsEnabled ?? true,
     };
 }
 
 /**
  * Atualiza campos do usuário
+ * Se o documento não existir, cria um novo
  */
 export async function updateUserInFirestore(
     userId: string,
-    data: Partial<User>
+    data: Partial<User>,
+    email?: string
 ) {
     const ref = doc(db, "users", userId);
-    await updateDoc(ref, data);
+    const snap = await getDoc(ref);
+
+    if (snap.exists()) {
+        // Documento existe, atualiza
+        await updateDoc(ref, data);
+    } else {
+        // Documento não existe, cria com merge
+        const userData: any = {
+            id: userId,
+            email: email || data.email || "",
+            ...data,
+        };
+        await setDoc(ref, userData, { merge: true });
+    }
 }
