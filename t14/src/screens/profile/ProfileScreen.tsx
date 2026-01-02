@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,27 +6,136 @@ import {
   Switch,
   Alert,
   TouchableOpacity,
+  ScrollView,
 } from "react-native";
 import colors from "@/theme/colors";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { updateUserInFirestore } from "@/services/user";
+import { displayPhone } from "@/utils/phoneMask";
+import { deleteUserAccount } from "@/firebase/auth";
+import { doc, deleteDoc, collection, query, where, getDocs, writeBatch } from "firebase/firestore";
+import { db } from "@/firebase/config";
+import PasswordModal from "@/components/PasswordModal";
+
+const LANGUAGE_NAMES: Record<string, string> = {
+  pt: "Português (Portugal)",
+  en: "English",
+  es: "Español",
+  fr: "Français",
+};
 
 export default function ProfileScreen({ navigation }: any) {
-  const [email, setEmail] = useState("rogerio@gmail.com");
-  const [name, setName] = useState("Rogério");
-  const [phone, setPhone] = useState("+351 123 456 789");
-  const [notif, setNotif] = useState(true);
-  const { logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
+  const { language, setLanguage, t } = useLanguage();
+  const [notif, setNotif] = useState(user?.notificationsEnabled ?? true);
+  const [saving, setSaving] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+
+  useEffect(() => {
+    setNotif(user?.notificationsEnabled ?? true);
+  }, [user]);
+
+  const handleToggleNotifications = async (value: boolean) => {
+    if (!user) return;
+    
+    setSaving(true);
+    try {
+      await updateUserInFirestore(user.uid, {
+        notificationsEnabled: value,
+      }, user.email);
+      
+      setNotif(value);
+      await refreshUser();
+    } catch (error) {
+      console.error("Erro ao atualizar preferências:", error);
+      Alert.alert("Erro", "Não foi possível atualizar as preferências de notificação");
+      setNotif(!value); // Reverter o estado
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async (password: string) => {
+    if (!user) return;
+
+    try {
+      // Deletar dados do Firestore
+      const userRef = doc(db, "users", user.uid);
+      
+      // Deletar relações de amizade
+      const friendsRef = collection(db, "friends");
+      const friendsQuery1 = query(friendsRef, where("userId", "==", user.uid));
+      const friendsQuery2 = query(friendsRef, where("friendId", "==", user.uid));
+      const [friendsSnap1, friendsSnap2] = await Promise.all([
+        getDocs(friendsQuery1),
+        getDocs(friendsQuery2),
+      ]);
+      
+      const batch = writeBatch(db);
+      
+      [...friendsSnap1.docs, ...friendsSnap2.docs].forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+
+      // Deletar solicitações de amizade
+      const requestsRef = collection(db, "friendRequests");
+      const requestsQuery1 = query(requestsRef, where("fromUserId", "==", user.uid));
+      const requestsQuery2 = query(requestsRef, where("toUserId", "==", user.uid));
+      const [requestsSnap1, requestsSnap2] = await Promise.all([
+        getDocs(requestsQuery1),
+        getDocs(requestsQuery2),
+      ]);
+      
+      [...requestsSnap1.docs, ...requestsSnap2.docs].forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+
+      // Deletar notificações
+      const notificationsRef = collection(db, "notifications");
+      const notificationsQuery = query(notificationsRef, where("userId", "==", user.uid));
+      const notificationsSnap = await getDocs(notificationsQuery);
+      notificationsSnap.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+
+      await batch.commit();
+      await deleteDoc(userRef);
+
+      // Deletar conta do Firebase Auth
+      await deleteUserAccount(password);
+      
+      Alert.alert("Sucesso", "Conta apagada com sucesso");
+      await logout();
+    } catch (error: any) {
+      console.error("Erro ao apagar conta:", error);
+      Alert.alert(
+        "Erro",
+        error.message || "Não foi possível apagar a conta. Verifique sua senha."
+      );
+    } finally {
+      setShowPasswordModal(false);
+    }
+  };
 
   const onRemove = () => {
-    Alert.alert("Queres apagar a conta?", "", [
-      { text: "Cancelar", style: "cancel", onPress: () => Alert.alert("A conta não foi apagada com sucesso") },
-      { text: "Confirmar", onPress: () => Alert.alert("A conta foi apagada com sucesso") },
-    ]);
+    Alert.alert(
+      "Apagar conta",
+      "Tem certeza que deseja apagar sua conta? Esta ação não pode ser desfeita.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Confirmar",
+          style: "destructive",
+          onPress: () => setShowPasswordModal(true),
+        },
+      ]
+    );
   };
 
   return (
-    <View style={s.container}>
+    <ScrollView style={s.container} contentContainerStyle={{ paddingBottom: 24 }}>
       <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
         <Text style={s.title}>Configurações</Text>
         <View style={s.divider} />
@@ -36,28 +145,35 @@ export default function ProfileScreen({ navigation }: any) {
       <View style={s.card}>
         <Row
           icon={<Ionicons name="person-circle-outline" size={22} color={colors.textDark} />}
-          label="Editar perfil"
+          label={t("profile.edit")}
           chevron
           onPress={() => navigation.navigate("EditProfile")}
         />
         <Row
           icon={<MaterialCommunityIcons name="account-outline" size={20} color={colors.textDark} />}
-          label="Nome"
-          value={name}
+          label={t("profile.name")}
+          value={user?.name || t("profile.notDefined")}
         />
+        {user?.nickname && (
+          <Row
+            icon={<MaterialCommunityIcons name="at" size={20} color={colors.textDark} />}
+            label={t("profile.nickname")}
+            value={user.nickname}
+          />
+        )}
         <Row
           icon={<MaterialCommunityIcons name="phone-outline" size={20} color={colors.textDark} />}
-          label="Telefone"
-          value={phone}
+          label={t("profile.phone")}
+          value={displayPhone(user?.phone)}
         />
         <Row
           icon={<MaterialCommunityIcons name="email-outline" size={20} color={colors.textDark} />}
-          label="Email"
-          value={email}
+          label={t("profile.email")}
+          value={user?.email || ""}
         />
         <Row
           icon={<MaterialCommunityIcons name="key-outline" size={20} color={colors.textDark} />}
-          label="Senha"
+          label={t("profile.password")}
           value={"••••••••"}
           chevron
           onPress={() => navigation.navigate("ChangePassword")}
@@ -68,18 +184,43 @@ export default function ProfileScreen({ navigation }: any) {
       <View style={s.card}>
         <Row
           icon={<MaterialCommunityIcons name="translate" size={20} color={colors.textDark} />}
-          label="Idioma"
-          value="Português (Portugal)"
+          label={t("profile.language")}
+          value={LANGUAGE_NAMES[language] || "Português (Portugal)"}
           chevron
-          onPress={() => {}}
+          onPress={() => {
+            Alert.alert(
+              t("profile.language"),
+              "Selecione um idioma:",
+              [
+                { text: t("common.cancel"), style: "cancel" },
+                {
+                  text: "Português",
+                  onPress: () => setLanguage("pt"),
+                },
+                {
+                  text: "English",
+                  onPress: () => setLanguage("en"),
+                },
+                {
+                  text: "Español",
+                  onPress: () => setLanguage("es"),
+                },
+                {
+                  text: "Français",
+                  onPress: () => setLanguage("fr"),
+                },
+              ]
+            );
+          }}
         />
         <Row
-          icon={<Ionicons name="lock-open-outline" size={20} color={colors.textDark} />}
-          label="Notificações"
+          icon={<Ionicons name="notifications-outline" size={20} color={colors.textDark} />}
+          label={t("profile.notifications")}
           right={
             <Switch
               value={notif}
-              onValueChange={setNotif}
+              onValueChange={handleToggleNotifications}
+              disabled={saving}
               thumbColor={notif ? "#fff" : undefined}
               trackColor={{ true: "#34C759", false: "#e5e7eb" }}
             />
@@ -91,7 +232,7 @@ export default function ProfileScreen({ navigation }: any) {
       <View style={s.card}>
         <Row
           icon={<Ionicons name="log-out-outline" size={20} color={colors.textDark} />}
-          label="Sair"
+          label={t("profile.logout")}
           chevron
           onPress={async () => {
             try {
@@ -103,13 +244,21 @@ export default function ProfileScreen({ navigation }: any) {
         />
         <Row
           icon={<Ionicons name="person-remove-outline" size={20} color={"#E11D48"} />}
-          label="Apagar conta"
+          label={t("profile.deleteAccount")}
           labelStyle={{ color: "#E11D48", fontWeight: "700" }}
           chevron
           onPress={onRemove}
         />
       </View>
-    </View>
+
+      <PasswordModal
+        visible={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
+        onConfirm={handleDeleteAccount}
+        title="Confirmar senha"
+        message="Digite sua senha para confirmar a exclusão da conta:"
+      />
+    </ScrollView>
   );
 }
 

@@ -12,14 +12,10 @@ import {
 import Input from "@/components/Input";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
-import { createGroupInFirestore,
-         updateGroupInFirestore,
-         deleteGroupFromFirestore, } from "@/firebase/group";
+import { createGroupInFirestore } from "@/firebase/group";
 import { auth, db } from "@/firebase/config";
 import { getAllUsers } from "@/firebase/user";
 import { doc, updateDoc, Timestamp } from "firebase/firestore";
-import { Ionicons } from "@expo/vector-icons";
-
 
 type FirebaseUserItem = {
   id: string;
@@ -38,12 +34,11 @@ export default function GrupoForm({ route, navigation }: any) {
   const { modo, grupo } = route.params || {};
 
   useEffect(() => {
-    if (modo === "editar" && grupo) {
-      setNomeGrupo(grupo.name || "");
-      setDescricao(grupo.description || "");
+    if (modo === "editar") {
+      setNomeGrupo(grupo?.title || "");
+      setDescricao(grupo?.descricao || "");
     }
   }, [modo, grupo]);
-
 
   useEffect(() => {
     navigation.setOptions({
@@ -52,7 +47,7 @@ export default function GrupoForm({ route, navigation }: any) {
   }, [navigation, modo]);
 
   useEffect(() => {
-    // carrega todos os users
+    // carrega todos os users (id + email)
     async function loadUsers() {
       try {
         const users = await getAllUsers();
@@ -63,21 +58,6 @@ export default function GrupoForm({ route, navigation }: any) {
     }
     loadUsers();
   }, []);
-
-  useEffect(() => {
-    if (modo !== "editar" || !grupo || allUsers.length === 0) return;
-
-    const emailsSelecionados: string[] = [];
-
-    allUsers.forEach((u) => {
-      if (grupo.memberIds?.includes(u.id) && u.email) {
-        emailsSelecionados.push(u.email);
-      }
-    });
-
-    setSelectedMembers(emailsSelecionados);
-  }, [modo, grupo, allUsers]);
-
 
   const toggleSelectEmail = (email: string) => {
     setSelectedMembers((prev) =>
@@ -100,7 +80,7 @@ export default function GrupoForm({ route, navigation }: any) {
 
       setLoadingCreate(true);
 
-      //cria o grupo básico
+      // 1) cria o grupo básico (owner já vira membro OWNER)
       const groupId = await createGroupInFirestore({
         name: nomeGrupo.trim(),
         description: descricao?.trim() || "",
@@ -108,8 +88,9 @@ export default function GrupoForm({ route, navigation }: any) {
         ownerId: user.uid,
       });
 
-      //se houver membros selecionados, converte emails -> ids e atualiza o doc do grupo
+      // 2) se houver membros selecionados, converte emails -> ids e atualiza o doc do grupo
       if (selectedMembers.length > 0) {
+        // map email -> id (somente emails encontrados)
         const emailToIdMap = new Map<string, string>();
         allUsers.forEach((u) => {
           if (u.email) emailToIdMap.set(u.email.toLowerCase(), u.id);
@@ -123,12 +104,12 @@ export default function GrupoForm({ route, navigation }: any) {
 
         // se não encontrou nenhum id, ignora
         if (memberIdsFromEmails.length > 0) {
-          // prepara estruturas members e balances
+          // prepara estruturas members e balances (mantendo o owner já existente)
           const now = Timestamp.now();
 
           const membersUpdate: Record<string, any> = {};
           const balancesUpdate: Record<string, number> = {};
-          const memberIdsUpdate: string[] = [];
+          const memberIdsUpdate: string[] = []; // somente os novos + owner será mantido pelo createGroup
 
           memberIdsFromEmails.forEach((id) => {
             membersUpdate[id] = {
@@ -148,10 +129,12 @@ export default function GrupoForm({ route, navigation }: any) {
             // portanto pegamos que o createGroupInFirestore já criou memberIds = [ownerId], nós substituiremos por owner + novos
             memberIds: [...(memberIdsFromEmails ? [user.uid, ...memberIdsFromEmails] : [user.uid])],
             members: {
+              // isso sobrescreve a chave members (merge parcial)
               ...membersUpdate,
             },
             balances: {
               ...balancesUpdate,
+              // o owner já tem 0 criado inicialmente pelo createGroupInFirestore
             },
             lastActivityAt: now,
             updatedAt: now,
@@ -168,97 +151,6 @@ export default function GrupoForm({ route, navigation }: any) {
       setLoadingCreate(false);
     }
   };
-
-  const handleUpdateGroup = async () => {
-    try {
-      if (!grupo?.id) {
-        Alert.alert("Erro", "ID do grupo não encontrado.");
-        return;
-      }
-
-      if (!nomeGrupo || !nomeGrupo.trim()) {
-        Alert.alert("Erro", "O nome do grupo é obrigatório.");
-        return;
-      }
-
-      const user = auth.currentUser;
-      if (!user) {
-        Alert.alert("Erro", "Você precisa estar logado.");
-        return;
-      }
-
-      setLoadingCreate(true);
-
-      // mapa email -> id
-      const emailToIdMap = new Map<string, string>();
-      allUsers.forEach((u) => {
-        if (u.email) emailToIdMap.set(u.email.toLowerCase(), u.id);
-      });
-
-      const memberIdsFromEmails: string[] = [];
-      selectedMembers.forEach((email) => {
-        const id = emailToIdMap.get((email || "").toLowerCase());
-        if (id && id !== user.uid) memberIdsFromEmails.push(id);
-      });
-
-      const now = Timestamp.now();
-
-      const membersUpdate: Record<string, any> = {};
-      const balancesUpdate: Record<string, number> = {};
-
-      memberIdsFromEmails.forEach((id) => {
-        membersUpdate[id] = {
-          role: "MEMBER",
-          status: "ATIVO",
-          joinedAt: now,
-        };
-        balancesUpdate[id] = 0;
-      });
-
-      const updatePayload: any = {
-        name: nomeGrupo.trim(),
-        description: descricao?.trim() || "",
-        memberIds: [user.uid, ...memberIdsFromEmails],
-        members: {
-          ...(grupo.members || {}),
-          ...membersUpdate,
-        },
-        balances: {
-          ...(grupo.balances || {}),
-          ...balancesUpdate,
-        },
-      };
-
-      await updateGroupInFirestore(grupo.id, updatePayload);
-
-      Alert.alert("Sucesso", "Grupo atualizado com sucesso!");
-      navigation.goBack();
-    } catch (error: any) {
-      console.error("Erro ao editar grupo:", error);
-      Alert.alert("Erro ao editar grupo", error?.message || String(error));
-    } finally {
-      setLoadingCreate(false);
-    }
-  };
-
-  const handleDeleteGroup = async () => {
-    try {
-      if (!grupo?.id) {
-        Alert.alert("Erro", "ID do grupo não encontrado.");
-        return;
-      }
-
-      await deleteGroupFromFirestore(grupo.id);
-
-      Alert.alert("Sucesso", "Grupo excluído com sucesso!");
-      navigation.goBack();
-    } catch (error: any) {
-      console.error("Erro ao excluir grupo:", error);
-      Alert.alert("Erro ao excluir grupo", error?.message || String(error));
-    }
-  };
-
-
 
   return (
     <View style={s.container}>
@@ -278,45 +170,25 @@ export default function GrupoForm({ route, navigation }: any) {
         style={s.input}
       />
 
-      {/* Membros do grupo */}
-      <View style={{ marginBottom: 16 }}>
-        <Text style={{ color: colors.textDark, fontWeight: "600", marginBottom: 6 }}>
-          Membros
-        </Text>
-
-        <View style={s.chipsContainer}>
-          {selectedMembers.map((email) => (
-            <View key={email} style={s.chip}>
-              <Text style={s.chipText}>{email}</Text>
-
-              <TouchableOpacity
-                style={s.chipRemove}
-                onPress={() => toggleSelectEmail(email)}
-              >
-                <Ionicons name="close" size={14} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          ))}
-
-          {/* Chip para abrir o “select” (modal) e adicionar novos membros */}
-          <TouchableOpacity
-            style={[s.chip, s.chipAdd]}
-            onPress={() => setOpenSelect(true)}
-          >
-            <Ionicons name="add" size={16} color="#fff" />
-            <Text style={[s.chipText, { color: "#fff", marginLeft: 4 }]}>
-              Adicionar
-            </Text>
-          </TouchableOpacity>
-        </View>
+      {/* campo de seleção (mantive o input original escondido caso você precise) */}
+      <View style={{ marginBottom: 12 }}>
+        <Button title="Selecionar membros" onPress={() => setOpenSelect(true)} />
+        {selectedMembers.length > 0 && (
+          <View style={{ marginTop: 8 }}>
+            {selectedMembers.map((email) => (
+              <Text key={email} style={{ color: "white" }}>
+                • {email}
+              </Text>
+            ))}
+          </View>
+        )}
       </View>
-
 
       <Button
         title={modo === "editar" ? "Salvar alterações" : loadingCreate ? "Criando..." : "Criar grupo"}
         onPress={() => {
           if (modo === "editar") {
-            handleUpdateGroup();
+            Alert.alert("Sucesso", "Editar ainda não implementado.");
           } else {
             handleCreateGroup();
           }
@@ -337,14 +209,15 @@ export default function GrupoForm({ route, navigation }: any) {
                 {
                   text: "Excluir",
                   style: "destructive",
-                  onPress: handleDeleteGroup,
+                  onPress: () => {
+                    Alert.alert("Sucesso", "Grupo excluído com sucesso!");
+                  },
                 },
               ]
             );
           }}
         />
       )}
-
 
       {/* Modal de seleção */}
       <Modal visible={openSelect} animationType="slide" transparent>
@@ -378,8 +251,12 @@ export default function GrupoForm({ route, navigation }: any) {
             </View>
 
             <View style={{ flexDirection: "row", gap: 8, marginTop: 18 }}>
-              <Button title="Fechar" onPress={() => setOpenSelect(false)} style={{ flex: 1 }} />
-              <Button title="Confirmar" onPress={() => setOpenSelect(false)} style={{ flex: 1, marginLeft: 8 }}/>
+              <Button title="Fechar" onPress={() => setOpenSelect(false)} />
+              <Button
+                title="Confirmar"
+                onPress={() => setOpenSelect(false)}
+                style={{ marginLeft: 8 }}
+              />
             </View>
           </View>
         </View>
@@ -407,35 +284,6 @@ const s = StyleSheet.create({
     backgroundColor: "red",
     marginTop: 12,
   },
-  chipsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F5EEDC",
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  chipText: {
-    color: colors.textDark,
-    fontSize: 13,
-  },
-  chipRemove: {
-    marginLeft: 6,
-    backgroundColor: "red",
-    borderRadius: 10,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-  },
-  chipAdd: {
-    backgroundColor: colors.primary,
-  },
 
   modalOverlay: {
     flex: 1,
@@ -458,4 +306,3 @@ const s = StyleSheet.create({
     paddingVertical: 10,
   },
 });
-

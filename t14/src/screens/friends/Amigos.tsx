@@ -1,37 +1,102 @@
-import React, { useState, useMemo } from "react";
-import { View, StyleSheet, Text, Modal, TouchableOpacity } from "react-native";
+import React, { useState, useMemo, useEffect } from "react";
+import { View, StyleSheet, Text, Modal, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
 import Button from "@/components/Button";
 import IconButton from "@/components/IconButton";
 import FlatListAmigos, { Amigo } from "@/components/FlatListAmigos";
 import InputLupa from "@/components/InputLupa";
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Avatar } from "react-native-paper";
+import { useAuth } from "@/contexts/AuthContext";
+import { auth, db } from "@/firebase/config";
+import { sendFriendRequest, acceptFriendRequest, rejectFriendRequest, getUserFriends, getPendingFriendRequests, removeFriend } from "@/firebase/friend";
+import { createFriendRequestNotification } from "@/firebase/notification";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { getUserFromFirestore } from "@/services/user";
+import colors from "@/theme/colors";
 
 interface AmigosProps {
   navigation: any;
 }
 
-const AMIGOS_DATA: Amigo[] = [
-  { id: '1', primeiroNome: 'João', apelido: 'Silva', nickname: 'joaos', email: 'joao.silva@example.com', telefone: '+55 11 99999-9999', estado: 'ativo', avatar: 'https://i.pravatar.cc/150?img=1' },
-  { id: '2', primeiroNome: 'Maria', apelido: 'Souza', nickname: 'mariinhaz', email: 'maria.souza@example.com', telefone: '+55 21 98888-8888', estado: 'pendente', avatar: 'https://i.pravatar.cc/150?img=2' },
-  { id: '3', primeiroNome: 'Carlos', apelido: 'Ferreira', nickname: 'cferreira', email: 'carlos.ferreira@example.com', telefone: '+55 31 97777-7777', estado: 'ativo', avatar: 'https://i.pravatar.cc/150?img=3' },
-  { id: '4', primeiroNome: 'Ana', apelido: 'Pereira', nickname: 'anap', email: 'ana.pereira@example.com', telefone: '+351 914222444', estado: 'pendente', avatar: 'https://i.pravatar.cc/150?img=4' },
-];
-
 export default function Amigos({ navigation }: AmigosProps) {
+  const { user } = useAuth();
   const [email, setEmail] = useState("");
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [filtro, setFiltro] = useState("");
-  
-  const[mensagem,setMensagem] = useState("") //Mensagem para utilizadores pendentes
-  const[tipoMensagem,setTipoMensagem] = useState<"sucesso" | "erro">("sucesso");
-
-
+  const [loading, setLoading] = useState(false);
+  const [amigos, setAmigos] = useState<Amigo[]>([]);
+  const [solicitacoesPendentes, setSolicitacoesPendentes] = useState<any[]>([]);
+  const [loadingFriends, setLoadingFriends] = useState(true);
 
   // Modal
   const [modalVisible, setModalVisible] = useState<boolean>(false);
   const [SelectedAmigo, setSelectedAmigo] = useState<Amigo | null>(null);
+
+  // Carregar amigos e solicitações
+  useEffect(() => {
+    if (!user) return;
+    loadFriends();
+    loadPendingRequests();
+  }, [user]);
+
+  const loadFriends = async () => {
+    if (!user) return;
+    setLoadingFriends(true);
+    try {
+      const friends = await getUserFriends(user.uid);
+      const amigosData: Amigo[] = [];
+
+      for (const friend of friends) {
+        const friendUser = await getUserFromFirestore(friend.friendId);
+        if (friendUser) {
+          amigosData.push({
+            id: friend.friendId,
+            primeiroNome: friendUser.name?.split(' ')[0] || 'Usuário',
+            apelido: friendUser.name?.split(' ').slice(1).join(' ') || '',
+            nickname: friendUser.nickname || '',
+            email: friendUser.email,
+            telefone: friendUser.phone || '',
+            estado: 'ativo',
+            avatar: friendUser.avatar || 'https://i.pravatar.cc/150?img=' + friend.friendId.charCodeAt(0) % 10,
+          });
+        }
+      }
+      setAmigos(amigosData);
+    } catch (error) {
+      console.error("Erro ao carregar amigos:", error);
+    } finally {
+      setLoadingFriends(false);
+    }
+  };
+
+  const loadPendingRequests = async () => {
+    if (!user) return;
+    try {
+      const requests = await getPendingFriendRequests(user.uid);
+      const requestsData: Amigo[] = [];
+
+      for (const request of requests) {
+        const fromUser = await getUserFromFirestore(request.fromUserId);
+        if (fromUser) {
+          requestsData.push({
+            id: request.fromUserId,
+            primeiroNome: fromUser.name?.split(' ')[0] || 'Usuário',
+            apelido: fromUser.name?.split(' ').slice(1).join(' ') || '',
+            nickname: fromUser.nickname || '',
+            email: fromUser.email,
+            telefone: fromUser.phone || '',
+            estado: 'pendente',
+            avatar: fromUser.avatar || 'https://i.pravatar.cc/150?img=' + request.fromUserId.charCodeAt(0) % 10,
+            requestId: request.id,
+          });
+        }
+      }
+      setSolicitacoesPendentes(requestsData);
+    } catch (error) {
+      console.error("Erro ao carregar solicitações:", error);
+    }
+  };
 
   const abrirDetalhes = (amigo: Amigo) => {
     setSelectedAmigo(amigo);
@@ -43,19 +108,56 @@ export default function Amigos({ navigation }: AmigosProps) {
     setModalVisible(false);
   };
 
-  //Mensagem de adicao ou remocao de amigos pendentes
-  const handleAdicionarPendente = (amigo:Amigo) => {
-    if(amigo.estado === "pendente"){
-        setMensagem(`O utilizador pendente ${amigo.primeiroNome} ${amigo.apelido} foi adcionado com sucesso`);
-        setTipoMensagem("sucesso");
+  const handleAdicionarPendente = async (amigo: Amigo) => {
+    if (!amigo.requestId) return;
+    setLoading(true);
+    try {
+      await acceptFriendRequest(amigo.requestId);
+      Alert.alert("Sucesso", `${amigo.primeiroNome} ${amigo.apelido} foi adicionado como amigo!`);
+      await loadFriends();
+      await loadPendingRequests();
+    } catch (error: any) {
+      // Se o erro for sobre solicitação já processada mas já são amigos, mostrar mensagem positiva
+      if (error.message && error.message.includes("já foi processada")) {
+        Alert.alert("Info", "Vocês já são amigos!");
+        await loadFriends();
+        await loadPendingRequests();
+      } else if (error.message && error.message.includes("rejeitada")) {
+        Alert.alert("Info", "Esta solicitação já foi rejeitada anteriormente");
+        await loadPendingRequests();
+      } else {
+        Alert.alert("Erro", error.message || "Não foi possível aceitar o convite");
+      }
+    } finally {
+      setLoading(false);
     }
-  }; 
-   const handleRemoverPendente = (amigo:Amigo) => {
-    if(amigo.estado === "pendente"){
-        setMensagem(`O utilizador pendente ${amigo.primeiroNome} ${amigo.apelido} foi adcionado com sucesso`);
-        setTipoMensagem("erro");
-   } 
- };
+  };
+
+  const handleRemoverPendente = async (amigo: Amigo) => {
+    if (!amigo.requestId) return;
+    Alert.alert(
+      "Rejeitar convite",
+      `Tem certeza que deseja rejeitar o convite de ${amigo.primeiroNome} ${amigo.apelido}?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Rejeitar",
+          style: "destructive",
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await rejectFriendRequest(amigo.requestId!);
+              await loadPendingRequests();
+            } catch (error: any) {
+              Alert.alert("Erro", error.message || "Não foi possível rejeitar o convite");
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const validarEmail = (email: string): string => {
     const regex = /^[^@\s]+@([^@\s]+\.)+.+$/;
@@ -63,29 +165,89 @@ export default function Amigos({ navigation }: AmigosProps) {
     return "";
   };
 
-  const handleEnviarConvite = (): void => {
+  const handleEnviarConvite = async (): Promise<void> => {
+    if (!user) {
+      Alert.alert("Erro", "Você precisa estar logado");
+      return;
+    }
+
     const erroMsg = validarEmail(email);
     if (erroMsg) {
       setErro(erroMsg);
       setSucesso("");
       return;
     }
+
+    setLoading(true);
     setErro("");
-    setSucesso(`Convite enviado com sucesso para ${email}`);
-    setEmail("");
+    setSucesso("");
+
+    try {
+      await sendFriendRequest(user.uid, email.trim());
+      
+      // Buscar o usuário para criar notificação
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("email", "==", email.toLowerCase()));
+      const snapshot = await getDocs(q);
+      
+      if (!snapshot.empty) {
+        const toUser = snapshot.docs[0];
+        const toUserId = toUser.id;
+        
+        // Buscar a solicitação criada
+        const requestsRef = collection(db, "friendRequests");
+        const requestQuery = query(
+          requestsRef,
+          where("fromUserId", "==", user.uid),
+          where("toUserId", "==", toUserId)
+        );
+        const requestSnapshot = await getDocs(requestQuery);
+        
+        if (!requestSnapshot.empty) {
+          const requestId = requestSnapshot.docs[0].id;
+          const fromUser = await getUserFromFirestore(user.uid);
+          await createFriendRequestNotification(
+            toUserId,
+            user.uid,
+            requestId,
+            fromUser?.name || user.email
+          );
+        }
+      }
+
+      setSucesso(`Convite enviado com sucesso para ${email}`);
+      setEmail("");
+    } catch (error: any) {
+      setErro(error.message || "Não foi possível enviar o convite");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const corBorda = erro ? "red" : sucesso ? "green" : "#ccc";
 
+  // Combinar amigos e solicitações pendentes
+  const todosAmigos = useMemo(() => {
+    return [...amigos, ...solicitacoesPendentes];
+  }, [amigos, solicitacoesPendentes]);
+
   const amigosFiltrados = useMemo(() => {
     const termo = filtro.toLowerCase();
-    return AMIGOS_DATA.filter((a) =>
+    return todosAmigos.filter((a) =>
       a.primeiroNome.toLowerCase().includes(termo) ||
       a.apelido.toLowerCase().includes(termo) ||
       a.nickname.toLowerCase().includes(termo) ||
       a.email.toLowerCase().includes(termo)
     );
-  }, [filtro]);
+  }, [todosAmigos, filtro]);
+
+  if (loadingFriends) {
+    return (
+      <View style={[styles.window, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.window}>
@@ -95,18 +257,24 @@ export default function Amigos({ navigation }: AmigosProps) {
           placeholder="Digite o email do amigo"
           value={email}
           onChangeText={setEmail}
+          editable={!loading}
           style={[
             styles.fullWidth,
             { borderColor: corBorda, borderWidth: 1, borderRadius: 5 },
           ]}
         />
-        {erro ? <Text style={styles.erroText}>{erro}</Text> : null}
-        {sucesso ? <Text style={styles.sucessoText}>{sucesso}</Text> : null}
+        {erro ? <Text style={styles.erroText}>{erro || ""}</Text> : null}
+        {sucesso ? <Text style={styles.sucessoText}>{sucesso || ""}</Text> : null}
       </View>
 
       {/* Botões */}
       <View style={[styles.container, { marginTop: 2 }]}>
-        <Button title="Enviar Convite" style={styles.fullWidth} onPress={handleEnviarConvite} />
+        <Button
+          title={loading ? "Enviando..." : "Enviar Convite"}
+          style={styles.fullWidth}
+          onPress={handleEnviarConvite}
+          disabled={loading}
+        />
         <IconButton style={styles.fullWidth} />
       </View>
 
@@ -126,7 +294,12 @@ export default function Amigos({ navigation }: AmigosProps) {
       {/* Lista */}
       <View style={{ marginTop: 20, flex: 1 }}>
         <Text style={styles.userTitle}>Amigos</Text>
-        <FlatListAmigos amigos={amigosFiltrados} onPressItem={abrirDetalhes} />
+        <FlatListAmigos
+          amigos={amigosFiltrados}
+          onPressItem={abrirDetalhes}
+          onAdicionarPendente={handleAdicionarPendente}
+          onRemoverPendente={handleRemoverPendente}
+        />
       </View>
 
       {/* Modal */}

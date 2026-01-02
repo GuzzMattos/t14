@@ -27,9 +27,9 @@ export default function Button({ title, onPress, disabled, loading, variant = 'p
     >
       {loading ? <ActivityIndicator /> : (
         typeof title === 'string' ? (
-        <Text style={[s.text, (variant !== 'primary') && s.textAlt]}>{title}</Text>
+        <Text style={[s.text, (variant !== 'primary') && s.textAlt]}>{title || ""}</Text>
         ) : (
-          title
+          title || null
          )
       )}
     </TouchableOpacity>

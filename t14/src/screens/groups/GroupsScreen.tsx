@@ -105,9 +105,9 @@ function GroupItem({ item, navigation }: { item: Group; navigation: any }) {
       <View style={s.avatar} />
 
       <View style={{ flex: 1 }}>
-        <Text style={s.activityTitle}>{item.name}</Text>
+        <Text style={s.activityTitle}>{item.name || ""}</Text>
         <Text style={s.activitySub}>
-          {item.status === "LIQUIDADO" ? "Liquidado" : "A liquidar"} • {item.description}
+          {item.status === "LIQUIDADO" ? "Liquidado" : "A liquidar"}{item.description ? ` • ${item.description}` : ""}
         </Text>
       </View>
 

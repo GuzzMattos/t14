@@ -21,6 +21,7 @@ export type Amigo = {
   estado: 'ativo' | 'pendente';
   avatar: string;
   nomeCompleto?: string; // opcional, pode ser gerado dinamicamente
+  requestId?: string; // ID da solicitação de amizade (para pendentes)
 };
 
 type FlatListAmigosProps = {

@@ -2,6 +2,8 @@ export type AppUser = {
     uid: string;
     email: string;
     name?: string | null;
-    notification?: boolean;
-    isActive?: boolean;
+    nickname?: string | null;
+    phone?: string | null;
+    avatar?: string | null;
+    notificationsEnabled?: boolean;
 };

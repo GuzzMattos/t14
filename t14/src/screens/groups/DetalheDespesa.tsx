@@ -1,11 +1,7 @@
-import React, { useState, useEffect} from "react";
+import React from "react";
 import { View, Text, StyleSheet, FlatList } from "react-native";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
-import { getDespesaFromFirestore } from "@/services/despesa";
-import { getAllUsers } from "@/services/user";
-import { getValoresIndividuaisAtualizados } from "@/firebase/pagamento";
-import { getAuth } from "firebase/auth";
 
 type Pessoa = {
   id: string;
@@ -13,117 +9,66 @@ type Pessoa = {
   valor: string;
 };
 
+const pessoasIguais: Pessoa[] = [
+  { id: "1", nome: "João", valor: "20€" },
+  { id: "2", nome: "Maria", valor: "20€" },
+  { id: "3", nome: "Pedro", valor: "20€" },
+];
+
+const renderPessoaIgual = ({ item }: { item: Pessoa }) => (
+  <View style={s.row}>
+    <Text style={s.metricLabel}>{item.nome}</Text>
+    <Text style={s.metricLabel}>{item.valor}</Text>
+  </View>
+);
+
 export default function DetalheDespesa({ route, navigation }: any) {
-  const { despesa } = route.params;
-  const [despesaFirebase, setDespesaFirebase] = useState<any>(null);
-  const [pagadorNome, setPagadorNome] = useState("");
-  const auth = getAuth();
-  const user = auth.currentUser;
-
-  if (!user) {
-    return <Text>Usuário não autenticado</Text>;
-  }
-
-  useEffect(() => {
-    async function loadDespesa() {
-      const data = await getDespesaFromFirestore(despesa.id);
-      if (data) {
-        const valoresAtualizados = await getValoresIndividuaisAtualizados(data);
-        setDespesaFirebase({
-          ...data,
-          valoresIndividuais: valoresAtualizados
-        });
-      }     
-    }
-    loadDespesa();
-  }, [despesa.id])
-
-  useEffect(() => {
-    async function loadPagador() {
-      const users = await getAllUsers();
-
-      const pagador = users.find(u => u.id === despesa.quemPagou);
-
-      if (pagador) {
-        setPagadorNome(pagador.name ?? "");
-      }
-    }
-    loadPagador()
-  }, [despesa.quemPagou])
-  
-  
-  if (!despesaFirebase) {
-    return <Text>Carregando...</Text>;
-  }
-
-  const saldoUsuario = despesaFirebase?.valoresIndividuais.find(
-    (p: any) => p.id === user?.uid
-  )?.saldo ?? 0;
+  const { title } = route.params;
 
   return (
     <View style={s.container}>
       <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-        <Text style={s.title}>{despesaFirebase.descricao}</Text>
+        <Text style={s.title}>{title}</Text>
         <View style={s.divider} />
       </View>
 
       <View style={[s.metricCard, { marginBottom: 12 }]}>
         <View style={s.row}>
+          <Text style={s.metricLabel}>Grupo</Text>
+          <Text style={s.metricValue}>Viagem</Text>
+        </View>
+        <View style={s.row}>
           <Text style={s.metricLabel}>Valor Total</Text>
-          <Text style={s.metricValue}>{despesaFirebase.valorTotal}€</Text>
+          <Text style={s.metricValue}>1000€</Text>
         </View>
         <View style={s.row}>
           <Text style={s.metricLabel}>Quem pagou</Text>
-          <Text style={s.metricValue}>{pagadorNome}</Text>
+          <Text style={s.metricValue}>João</Text>
         </View>
       </View>
 
       <View style={[s.metricCard, { marginBottom: 12 }]}>
         <Text style={[s.metricLabel, { marginBottom: 8 }]}>Divisão</Text>
         <FlatList
-          data={despesaFirebase.valoresIndividuais}
+          data={pessoasIguais}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={s.row}>
-              <Text style={s.metricLabel}>{item.nome}</Text>
-              <Text style={s.metricLabel}>
-                {item.saldo}€ {item.saldo === 0 ? "(quitado)": ""}</Text>
-            </View>
-          )}
+          renderItem={renderPessoaIgual}
           contentContainerStyle={{ paddingTop: 4 }}
         />
       </View>
 
       <Button
         title="Quitar parcialmente"
-        disabled={saldoUsuario === 0}
         onPress={() =>
-          navigation.navigate("Pagamento", { 
-            tipoPagamento: "parcial", 
-            despesa: despesaFirebase,
-            pessoa: {
-              id: user?.uid,
-              nome: user?.displayName ?? "",
-            },
-              saldo: saldoUsuario,
-            })
+          navigation.navigate("Pagamento", { tipoPagamento: "parcial", valorDivida: 100, pessoa: "João" })
         }
         variant="outline"
         style={{ marginBottom: 10 }}
       />
       <Button
         title="Quitar totalmente"
-        disabled={saldoUsuario === 0}
         onPress={() =>
-          navigation.navigate("Pagamento", { 
-            tipoPagamento: "total", 
-            despesa: despesaFirebase,
-            pessoa: {
-              id: user?.uid,
-              nome: user?.displayName ?? "",
-            },
-              saldo: saldoUsuario,
-            })
+          navigation.navigate("Pagamento", { tipoPagamento: "total", valorDivida: 100, pessoa: "João" })
         }
         style={{ marginBottom: 10 }}
       />
