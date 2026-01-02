@@ -1,6 +1,6 @@
 // src/firebase/storage.ts
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
-import { storage } from "./config";
+import { storage, auth } from "./config";
 
 /**
  * Faz upload de uma imagem para o Firebase Storage
@@ -10,34 +10,93 @@ import { storage } from "./config";
  */
 export async function uploadAvatar(userId: string, imageUri: string): Promise<string> {
   try {
-    // Para React Native, usar XMLHttpRequest ou FormData
-    // Primeiro, converter a URI local para blob usando fetch
-    let blob: Blob;
-    
-    // Se for uma URI local (file://), usar XMLHttpRequest
-    if (imageUri.startsWith('file://') || imageUri.startsWith('content://')) {
-      // Para React Native, usar fetch com URI local
-      const response = await fetch(imageUri);
-      blob = await response.blob();
-    } else {
-      // Se for uma URL remota
-      const response = await fetch(imageUri);
-      blob = await response.blob();
+    // Verificar se o usuário está autenticado
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error("Usuário não autenticado. Faça login novamente.");
     }
-    
+
+    if (user.uid !== userId) {
+      throw new Error("Você só pode fazer upload de avatar para sua própria conta.");
+    }
+
+    console.log("Iniciando upload do avatar para usuário:", userId);
+    console.log("URI da imagem:", imageUri);
+
+    let blob: Blob;
+
+    // No Expo/React Native, fetch funciona com URIs locais
+    // Se for uma URI local (file:// ou content://) ou URL remota
+    try {
+      console.log("Fazendo fetch da imagem...");
+      const response = await fetch(imageUri);
+      if (!response.ok) {
+        throw new Error(`Erro ao ler a imagem: ${response.status} ${response.statusText}`);
+      }
+      blob = await response.blob();
+      console.log("Blob criado com sucesso. Tamanho:", blob.size, "bytes");
+    } catch (fetchError: any) {
+      console.error("Erro ao fazer fetch da imagem:", fetchError);
+      throw new Error(`Erro ao processar a imagem: ${fetchError.message || 'Não foi possível ler o arquivo'}`);
+    }
+
+    // Verificar se o blob é válido
+    if (!blob || blob.size === 0) {
+      throw new Error("A imagem selecionada está vazia ou inválida");
+    }
+
+    // Verificar tamanho (limite de 5MB)
+    if (blob.size > 5 * 1024 * 1024) {
+      throw new Error("A imagem é muito grande. Tamanho máximo: 5MB");
+    }
+
     // Criar referência no storage
-    const imageRef = ref(storage, `avatars/${userId}/${Date.now()}.jpg`);
-    
-    // Fazer upload
-    await uploadBytes(imageRef, blob);
-    
+    const imagePath = `avatars/${userId}/${Date.now()}.jpg`;
+    const imageRef = ref(storage, imagePath);
+    console.log("Caminho no storage:", imagePath);
+
+    // Fazer upload com metadata
+    console.log("Iniciando upload para Firebase Storage...");
+    await uploadBytes(imageRef, blob, {
+      contentType: 'image/jpeg',
+    });
+    console.log("Upload concluído com sucesso!");
+
     // Obter URL de download
     const downloadURL = await getDownloadURL(imageRef);
-    
+    console.log("URL de download obtida:", downloadURL);
+
     return downloadURL;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro ao fazer upload do avatar:", error);
-    throw new Error("Erro ao fazer upload da imagem. Verifique sua conexão e tente novamente.");
+    // Log detalhado do erro
+    if (error.code) {
+      console.error("Código do erro:", error.code);
+    }
+    if (error.message) {
+      console.error("Mensagem do erro:", error.message);
+    }
+    if (error.serverResponse) {
+      console.error("Resposta do servidor:", error.serverResponse);
+    }
+    if (error.customData) {
+      console.error("Dados customizados:", error.customData);
+    }
+
+    // Mensagens mais específicas baseadas no código do erro
+    let errorMessage = error.message || "Erro ao fazer upload da imagem. Verifique sua conexão e tente novamente.";
+
+    if (error.code === 'storage/unauthorized') {
+      errorMessage = "Você não tem permissão para fazer upload. Verifique as regras do Storage.";
+    } else if (error.code === 'storage/unknown') {
+      errorMessage = "Erro desconhecido no Storage. Verifique se as regras do Storage foram aplicadas corretamente no Firebase Console.";
+    } else if (error.code === 'storage/quota-exceeded') {
+      errorMessage = "Limite de armazenamento excedido.";
+    } else if (error.code === 'storage/unauthenticated') {
+      errorMessage = "Você precisa estar autenticado para fazer upload de imagens.";
+    }
+
+    throw new Error(errorMessage);
   }
 }
 
@@ -48,11 +107,11 @@ export async function uploadAvatar(userId: string, imageUri: string): Promise<st
 export async function deleteAvatar(avatarUrl: string): Promise<void> {
   try {
     if (!avatarUrl) return;
-    
+
     // Tentar extrair o path da URL do Firebase Storage
     // Formato: https://firebasestorage.googleapis.com/v0/b/BUCKET/o/PATH?alt=media&token=TOKEN
     const url = new URL(avatarUrl);
-    
+
     // Extrair o path após '/o/'
     let path = '';
     if (url.pathname.includes('/o/')) {
@@ -64,7 +123,7 @@ export async function deleteAvatar(avatarUrl: string): Promise<void> {
         path = decodeURIComponent(match[1]);
       }
     }
-    
+
     if (path) {
       const imageRef = ref(storage, path);
       await deleteObject(imageRef);

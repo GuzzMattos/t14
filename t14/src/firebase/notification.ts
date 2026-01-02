@@ -2,7 +2,7 @@
 import { db } from "./config";
 import { collection, doc, setDoc, getDoc, updateDoc, query, where, getDocs, Timestamp, onSnapshot, orderBy, limit, deleteDoc } from "firebase/firestore";
 
-export type NotificationType = "EXPENSE_PENDING_APPROVAL" | "EXPENSE_APPROVED" | "EXPENSE_REJECTED" | "FRIEND_REQUEST" | "MEMBER_ADDED" | "PAYMENT_RECEIVED";
+export type NotificationType = "EXPENSE_PENDING_APPROVAL" | "EXPENSE_APPROVED" | "EXPENSE_REJECTED" | "FRIEND_REQUEST" | "MEMBER_ADDED" | "PAYMENT_RECEIVED" | "PAYMENT_PENDING_CONFIRMATION";
 
 export type NotificationStatus = "UNREAD" | "READ" | "ARCHIVED";
 
@@ -21,6 +21,7 @@ export type Notification = {
   expenseId?: string;
   fromUserId?: string;
   friendRequestId?: string;
+  paymentId?: string; // ID do pagamento
   
   // Metadados
   createdAt: any;
@@ -150,6 +151,30 @@ export async function createMemberAddedNotification(
     title: "Você foi adicionado a um grupo",
     message: `${addedByName} adicionou você ao grupo "${groupName}"`,
     groupId,
+  });
+}
+
+/**
+ * Cria notificação de pagamento pendente de confirmação
+ */
+export async function createPaymentNotification(
+  expenseCreatorId: string,
+  paymentId: string,
+  expenseId: string,
+  groupId: string,
+  payerName: string,
+  amount: number,
+  expenseDescription: string
+): Promise<string> {
+  return await createNotification({
+    userId: expenseCreatorId,
+    type: "PAYMENT_PENDING_CONFIRMATION",
+    status: "UNREAD",
+    title: "Pagamento pendente de confirmação",
+    message: `${payerName} pagou ${amount.toFixed(2)}€ da despesa "${expenseDescription}". Confirme o pagamento.`,
+    groupId,
+    expenseId,
+    paymentId,
   });
 }
 

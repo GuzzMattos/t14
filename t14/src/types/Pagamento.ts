@@ -1,3 +1,5 @@
+export type PagamentoStatus = "PENDING_CONFIRMATION" | "CONFIRMED" | "REJECTED";
+
 export type Pagamento = {
   id: string;
   despesaId: string;
@@ -6,6 +8,7 @@ export type Pagamento = {
   metodoPagamento: string;
   comentario?: string;
   valor: number;
+  status?: PagamentoStatus;
 
   createdAt?: any;
   updatedAt?: any;

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { View, StyleSheet, Text, Modal, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Text, Modal, TouchableOpacity, Alert, ActivityIndicator, FlatList, Image } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import Button from "@/components/Button";
 import IconButton from "@/components/IconButton";
 import FlatListAmigos, { Amigo } from "@/components/FlatListAmigos";
@@ -252,60 +253,70 @@ export default function Amigos({ navigation }: AmigosProps) {
   return (
     <View style={styles.window}>
       {/* Input email */}
-      <View>
+      <View style={styles.topSection}>
         <InputLupa
           placeholder="Digite o email do amigo"
           value={email}
           onChangeText={setEmail}
           editable={!loading}
           style={[
-            styles.fullWidth,
+            styles.emailInput,
             { borderColor: corBorda, borderWidth: 1, borderRadius: 5 },
           ]}
         />
         {erro ? <Text style={styles.erroText}>{erro || ""}</Text> : null}
         {sucesso ? <Text style={styles.sucessoText}>{sucesso || ""}</Text> : null}
-      </View>
-
-      {/* Botões */}
-      <View style={[styles.container, { marginTop: 2 }]}>
         <Button
           title={loading ? "Enviando..." : "Enviar Convite"}
-          style={styles.fullWidth}
+          style={styles.sendButton}
           onPress={handleEnviarConvite}
           disabled={loading}
         />
-        <IconButton style={styles.fullWidth} />
       </View>
 
       {/* Filtro */}
-      <View style={{ marginTop: 10 }}>
+      <View style={styles.filterSection}>
         <InputLupa
-          placeholder="Filtrar amigos"
+          placeholder="Pesquisar amigos..."
           value={filtro}
           onChangeText={setFiltro}
-          style={styles.fullWidth}
+          style={styles.searchInput}
         />
-        <TouchableOpacity>
-          <MaterialCommunityIcons name="menu-down" size={20} />
-        </TouchableOpacity>
       </View>
 
       {/* Lista */}
-      <View style={{ marginTop: 20, flex: 1 }}>
-        <Text style={styles.userTitle}>Amigos</Text>
-        <FlatListAmigos
-          amigos={amigosFiltrados}
-          onPressItem={abrirDetalhes}
-          onAdicionarPendente={handleAdicionarPendente}
-          onRemoverPendente={handleRemoverPendente}
-        />
+      <View style={styles.listContainer}>
+        {loadingFriends ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            data={amigosFiltrados}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingBottom: 16 }}
+            renderItem={({ item }) => (
+              <FriendItem
+                item={item}
+                onPress={() => abrirDetalhes(item)}
+                onAdicionarPendente={handleAdicionarPendente}
+                onRemoverPendente={handleRemoverPendente}
+              />
+            )}
+            ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>Nenhum amigo encontrado</Text>
+              </View>
+            }
+          />
+        )}
       </View>
 
       {/* Modal */}
       {SelectedAmigo && (
         <Modal visible={modalVisible} animationType="slide" onRequestClose={fecharDetalhes}>
-          <View style={modalStyles.container}>
+          <SafeAreaView style={modalStyles.container} edges={['top']}>
             <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
               <Text style={modalStyles.title}>Perfil do Amigo</Text>
               <View style={modalStyles.divider} />
@@ -321,10 +332,45 @@ export default function Amigos({ navigation }: AmigosProps) {
               <Row icon={<MaterialCommunityIcons name="check-circle-outline" size={20} color="#111827" />} label="Estado" value={SelectedAmigo.estado.toUpperCase()} />
             </View>
 
+            {SelectedAmigo.estado === 'ativo' && (
+              <TouchableOpacity 
+                onPress={async () => {
+                  Alert.alert(
+                    "Remover amigo",
+                    `Tem certeza que deseja remover ${SelectedAmigo.primeiroNome} ${SelectedAmigo.apelido} dos seus amigos?`,
+                    [
+                      { text: "Cancelar", style: "cancel" },
+                      {
+                        text: "Remover",
+                        style: "destructive",
+                        onPress: async () => {
+                          if (!user) return;
+                          setLoading(true);
+                          try {
+                            await removeFriend(user.uid, SelectedAmigo.id);
+                            Alert.alert("Sucesso", "Amigo removido com sucesso!");
+                            await loadFriends();
+                            fecharDetalhes();
+                          } catch (error: any) {
+                            Alert.alert("Erro", error.message || "Não foi possível remover o amigo");
+                          } finally {
+                            setLoading(false);
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }}
+                style={[modalStyles.closeButton, { backgroundColor: "#E11D48", marginTop: 10 }]}
+              >
+                <Text style={modalStyles.closeText}>Remover Amigo</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity onPress={fecharDetalhes} style={modalStyles.closeButton}>
               <Text style={modalStyles.closeText}>Fechar</Text>
             </TouchableOpacity>
-          </View>
+          </SafeAreaView>
         </Modal>
       )}
     </View>
@@ -380,13 +426,145 @@ const rowStyles = StyleSheet.create({
   value: { color: "#6B7280" },
 });
 
+function FriendItem({ 
+  item, 
+  onPress, 
+  onAdicionarPendente, 
+  onRemoverPendente 
+}: { 
+  item: Amigo; 
+  onPress: () => void;
+  onAdicionarPendente?: (amigo: Amigo) => void;
+  onRemoverPendente?: (amigo: Amigo) => void;
+}) {
+  const nomeCompleto = `${item.primeiroNome} ${item.apelido}`;
+  
+  return (
+    <TouchableOpacity
+      activeOpacity={0.8}
+      style={styles.friendCard}
+      onPress={onPress}
+    >
+      <Image source={{ uri: item.avatar }} style={styles.avatar} />
+
+      <View style={{ flex: 1 }}>
+        <Text style={styles.friendName}>{nomeCompleto}</Text>
+        {item.estado === 'ativo' ? (
+          <Text style={styles.friendStatus}>ATIVO</Text>
+        ) : (
+          <View style={styles.pendingActions}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.acceptButton]}
+              onPress={() => onAdicionarPendente?.(item)}
+            >
+              <Text style={styles.actionButtonText}>Aceitar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.rejectButton]}
+              onPress={() => onRemoverPendente?.(item)}
+            >
+              <Text style={styles.actionButtonText}>Rejeitar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      <MaterialCommunityIcons name="chevron-right" size={20} color="#9CA3AF" />
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
-  window: { flex: 1, padding: 20, backgroundColor: "#fff" },
-  container: { width: "100%" },
-  fullWidth: { width: "100%", marginTop: 8 },
-  userTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15 },
-  erroText: { color: "red", marginTop: 5 },
-  sucessoText: { color: "green", marginTop: 5 },
+  window: { 
+    flex: 1, 
+    backgroundColor: colors.background,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  topSection: {
+    marginBottom: 16,
+  },
+  emailInput: {
+    width: "100%",
+    marginBottom: 8,
+  },
+  sendButton: {
+    marginTop: 8,
+  },
+  filterSection: {
+    marginBottom: 16,
+  },
+  searchInput: {
+    width: "100%",
+  },
+  listContainer: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 40,
+  },
+  emptyText: {
+    color: "#6B7280",
+    fontSize: 16,
+  },
+  friendCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  friendName: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.textDark,
+  },
+  friendStatus: {
+    color: "#10B981",
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  pendingActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 6,
+  },
+  actionButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  acceptButton: {
+    backgroundColor: "#10B981",
+  },
+  rejectButton: {
+    backgroundColor: "#E11D48",
+  },
+  actionButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  erroText: { color: "red", marginTop: 5, fontSize: 12 },
+  sucessoText: { color: "green", marginTop: 5, fontSize: 12 },
 });
 
 const modalStyles = StyleSheet.create({

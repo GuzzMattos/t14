@@ -10,6 +10,7 @@ import {
 import colors from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { auth, db } from "@/firebase/config";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { Group } from "@/types/Group";
@@ -39,6 +40,7 @@ const ACTIVITY: Activity[] = [
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [groups, setGroups] = useState<Group[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,18 +144,18 @@ export default function HomeScreen() {
     <View style={s.container}>
       <View style={s.cardsRow}>
         <View style={[s.metricCard, { marginRight: 12 }]}>
-          <Text style={s.metricLabel}>Total do mês</Text>
+          <Text style={s.metricLabel}>{t("home.totalMonth")}</Text>
           <Text style={s.metricValue}>{calcularTotalMes().toFixed(2)}€</Text>
         </View>
         <View style={s.metricCard}>
-          <Text style={s.metricLabel}>Seu saldo</Text>
+          <Text style={s.metricLabel}>{t("home.yourBalance")}</Text>
           <Text style={[s.metricValue, { color: calcularSaldoTotal() >= 0 ? "#2E7D32" : "#E11D48" }]}>
             {calcularSaldoTotal() >= 0 ? "+" : ""}{calcularSaldoTotal().toFixed(2)}€
           </Text>
         </View>
       </View>
 
-      <Text style={s.sectionTitle}>Atividade recente</Text>
+      <Text style={s.sectionTitle}>{t("home.recentActivity")}</Text>
       <FlatList
         data={activities}
         keyExtractor={(i) => i.id}
@@ -162,7 +164,7 @@ export default function HomeScreen() {
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         ListEmptyComponent={
           <View style={{ padding: 20, alignItems: "center" }}>
-            <Text style={{ color: colors.label }}>Nenhuma atividade recente</Text>
+            <Text style={{ color: colors.label }}>{t("home.noActivity")}</Text>
           </View>
         }
       />

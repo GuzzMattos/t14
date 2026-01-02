@@ -57,6 +57,19 @@ export async function createExpense(
   const expenseRef = doc(expensesRef);
   const now = Timestamp.now();
 
+  // Filtrar divisões para remover campos undefined
+  const cleanDivisions = divisions.map(div => {
+    const clean: ExpenseDivision = {
+      userId: div.userId,
+      amount: div.amount,
+    };
+    // Só adicionar percentage se não for undefined
+    if (div.percentage !== undefined && div.percentage !== null) {
+      clean.percentage = div.percentage;
+    }
+    return clean;
+  });
+
   const expense: Expense = {
     id: expenseRef.id,
     groupId,
@@ -66,7 +79,7 @@ export async function createExpense(
     currency: "EUR",
     paidBy,
     divisionType,
-    divisions,
+    divisions: cleanDivisions,
     status: "PENDING_APPROVAL",
     createdAt: now,
     updatedAt: now,

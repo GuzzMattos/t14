@@ -1,0 +1,34 @@
+rules_version = '2';
+
+// Regras de segurança do Firebase Storage
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function para verificar se o usuário está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function para verificar se o usuário é o dono do arquivo
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Regras para avatares de usuários
+    match /avatars/{userId}/{allPaths=**} {
+      // Usuários podem fazer upload apenas em sua própria pasta de avatar
+      allow write: if isOwner(userId)
+                   && request.resource.size < 5 * 1024 * 1024  // Limite de 5MB
+                   && request.resource.contentType.matches('image/.*');
+      
+      // Qualquer usuário autenticado pode ler avatares (para exibir fotos de perfil)
+      allow read: if isAuthenticated();
+    }
+    
+    // Bloquear acesso a tudo mais por padrão
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

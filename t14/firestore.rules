@@ -24,13 +24,18 @@ service cloud.firestore {
       // Usuários podem ler seu próprio perfil
       allow read: if isOwner(userId);
       
-      // Usuários podem atualizar seu próprio perfil
+      // Usuários podem atualizar seu próprio perfil (incluindo avatar)
+      // O campo avatar contém a URL da imagem armazenada no Firebase Storage
       allow update: if isOwner(userId);
       
       // Usuários podem criar seu próprio perfil
       allow create: if isOwner(userId);
       
+      // Usuários podem deletar seu próprio perfil
+      allow delete: if isOwner(userId);
+      
       // Qualquer usuário autenticado pode ler outros usuários (para buscar amigos)
+      // Isso permite ler o campo avatar de outros usuários para exibir fotos de perfil
       allow read: if isAuthenticated();
     }
     
@@ -120,6 +125,7 @@ service cloud.firestore {
     match /expenses/{expenseId} {
       // Usuários podem ler despesas de grupos dos quais são membros
       allow read: if isAuthenticated() && 
+                     resource != null &&
                      exists(/databases/$(database)/documents/group/$(resource.data.groupId)) &&
                      get(/databases/$(database)/documents/group/$(resource.data.groupId)).data.memberIds.hasAny([request.auth.uid]);
       
@@ -130,14 +136,79 @@ service cloud.firestore {
       
       // Apenas o dono do grupo pode atualizar despesas (aprovar/rejeitar)
       allow update: if isAuthenticated() && 
+                      resource != null &&
                       exists(/databases/$(database)/documents/group/$(resource.data.groupId)) &&
                       get(/databases/$(database)/documents/group/$(resource.data.groupId)).data.ownerId == request.auth.uid;
       
       // Apenas o criador ou dono do grupo pode deletar despesas
       allow delete: if isAuthenticated() && 
+                      resource != null &&
                       (resource.data.createdBy == request.auth.uid ||
                        (exists(/databases/$(database)/documents/group/$(resource.data.groupId)) &&
                         get(/databases/$(database)/documents/group/$(resource.data.groupId)).data.ownerId == request.auth.uid));
+    }
+    
+    // Coleção: pagamentos
+    match /pagamentos/{paymentId} {
+      // Usuários podem ler pagamentos relacionados a despesas de grupos dos quais são membros
+      allow read: if isAuthenticated() && 
+                     resource != null &&
+                     exists(/databases/$(database)/documents/expenses/$(resource.data.despesaId)) &&
+                     exists(/databases/$(database)/documents/group/$(get(/databases/$(database)/documents/expenses/$(resource.data.despesaId)).data.groupId)) &&
+                     get(/databases/$(database)/documents/group/$(get(/databases/$(database)/documents/expenses/$(resource.data.despesaId)).data.groupId)).data.memberIds.hasAny([request.auth.uid]);
+      
+      // Usuários podem criar pagamentos para despesas de grupos dos quais são membros
+      allow create: if isAuthenticated() && 
+                       exists(/databases/$(database)/documents/expenses/$(request.resource.data.despesaId)) &&
+                       exists(/databases/$(database)/documents/group/$(get(/databases/$(database)/documents/expenses/$(request.resource.data.despesaId)).data.groupId)) &&
+                       get(/databases/$(database)/documents/group/$(get(/databases/$(database)/documents/expenses/$(request.resource.data.despesaId)).data.groupId)).data.memberIds.hasAny([request.auth.uid]) &&
+                       request.resource.data.deUsuarioId == request.auth.uid;
+      
+      // Apenas o criador da despesa pode atualizar pagamentos (confirmar/rejeitar)
+      allow update: if isAuthenticated() && 
+                      resource != null &&
+                      exists(/databases/$(database)/documents/expenses/$(resource.data.despesaId)) &&
+                      get(/databases/$(database)/documents/expenses/$(resource.data.despesaId)).data.createdBy == request.auth.uid;
+    }
+  }
+}
+
+// ============================================
+// REGRAS DO FIREBASE STORAGE
+// ============================================
+// IMPORTANTE: Estas regras devem ser aplicadas separadamente no Firebase Console
+// Acesse: Storage → Regras e cole apenas a parte abaixo (service firebase.storage)
+// ============================================
+
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function para verificar se o usuário está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function para verificar se o usuário é o dono do arquivo
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Regras para avatares de usuários
+    match /avatars/{userId}/{allPaths=**} {
+      // Usuários podem fazer upload apenas em sua própria pasta de avatar
+      allow write: if isOwner(userId)
+                   && request.resource.size < 5 * 1024 * 1024  // Limite de 5MB
+                   && request.resource.contentType.matches('image/.*');
+      
+      // Qualquer usuário autenticado pode ler avatares (para exibir fotos de perfil)
+      allow read: if isAuthenticated();
+    }
+    
+    // Bloquear acesso a tudo mais por padrão
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -56,27 +56,22 @@ export default function MainTabs() {
           };
           const name = map[route.name] ?? 'ellipse';
           
-          // Adicionar badge para notificações
+          // Adicionar badge (bolinha vermelha) para notificações
           if (route.name === 'Notificacoes' && unreadCount > 0) {
             return (
               <View style={{ position: 'relative' }}>
                 <Ionicons name={name as any} size={size} color={color} />
                 <View style={{
                   position: 'absolute',
-                  right: -6,
-                  top: -3,
+                  right: -2,
+                  top: -2,
                   backgroundColor: '#E11D48',
-                  borderRadius: 8,
-                  minWidth: 16,
-                  height: 16,
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  paddingHorizontal: 4,
-                }}>
-                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </Text>
-                </View>
+                  borderRadius: 6,
+                  width: 12,
+                  height: 12,
+                  borderWidth: 2,
+                  borderColor: '#fff',
+                }} />
               </View>
             );
           }

@@ -1,27 +1,23 @@
 // src/utils/phoneMask.ts
 
 /**
- * Aplica máscara de telefone brasileiro/português
+ * Aplica máscara de telefone português (PT)
+ * Formato: 912 345 678 (9 dígitos)
  */
 export function formatPhoneNumber(value: string): string {
   // Remove tudo que não é número
   const numbers = value.replace(/\D/g, '');
   
-  // Limita a 15 caracteres (formato internacional)
-  const limited = numbers.slice(0, 15);
+  // Limita a 9 dígitos (formato português)
+  const limited = numbers.slice(0, 9);
   
   // Aplica máscara baseada no tamanho
   if (limited.length <= 3) {
     return limited;
   } else if (limited.length <= 6) {
     return `${limited.slice(0, 3)} ${limited.slice(3)}`;
-  } else if (limited.length <= 9) {
-    return `${limited.slice(0, 3)} ${limited.slice(3, 6)} ${limited.slice(6)}`;
-  } else if (limited.length <= 11) {
-    return `${limited.slice(0, 3)} ${limited.slice(3, 7)} ${limited.slice(7)}`;
   } else {
-    // Formato internacional: +351 123 456 789
-    return `+${limited.slice(0, 3)} ${limited.slice(3, 6)} ${limited.slice(6, 9)} ${limited.slice(9)}`;
+    return `${limited.slice(0, 3)} ${limited.slice(3, 6)} ${limited.slice(6)}`;
   }
 }
 

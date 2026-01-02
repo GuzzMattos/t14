@@ -5,6 +5,7 @@ import Button from "@/components/Button";
 import colors from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import Filter from "@/components/Filter";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { auth, db } from "@/firebase/config";
 import { Group } from "@/types/Group";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
@@ -15,6 +16,7 @@ const OPCOES = [
 ];
 
 export default function Groups({ navigation }: any) {
+  const { t } = useLanguage();
   const [pesquisar, setPesquisar] = useState<string>("");
   const [filtro, setFiltro] = useState<string | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -54,7 +56,7 @@ export default function Groups({ navigation }: any) {
     <View style={s.container}>
       <View style={s.topRow}>
         <Input
-          placeholder="Pesquisar grupos..."
+          placeholder={t("groups.title") + "..."}
           value={pesquisar}
           onChangeText={setPesquisar}
           style={{ width: 325 }}

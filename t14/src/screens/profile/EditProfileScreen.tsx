@@ -37,8 +37,10 @@ export default function EditProfileScreen({ navigation }: any) {
       }
 
       // Abrir seletor de imagem
+      // Nota: MediaTypeOptions está deprecated, mas ainda funciona
+      // A nova forma seria usar 'images' como string, mas vamos manter compatibilidade
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: 'images' as any,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,

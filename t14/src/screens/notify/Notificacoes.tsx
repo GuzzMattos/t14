@@ -20,6 +20,7 @@ import {
 } from "@/firebase/notification";
 import { approveExpense, rejectExpense } from "@/firebase/expense";
 import { acceptFriendRequest, rejectFriendRequest } from "@/firebase/friend";
+import { confirmPayment, rejectPayment } from "@/firebase/pagamento";
 
 export default function Notificacoes() {
   const { user } = useAuth();
@@ -70,7 +71,8 @@ export default function Notificacoes() {
           onPress: async () => {
             try {
               await approveExpense(notification.expenseId!, user!.uid, notification.groupId!);
-              await markNotificationAsRead(notification.id);
+              // Deletar a notificação de aprovação pendente após aprovar
+              await deleteNotification(notification.id, user!.uid);
               Alert.alert("Sucesso", "Despesa aprovada e adicionada ao grupo!");
             } catch (error: any) {
               Alert.alert("Erro", error.message || "Não foi possível aprovar a despesa");
@@ -79,6 +81,24 @@ export default function Notificacoes() {
         },
       ]
     );
+  };
+
+  const handlePaymentConfirmation = async (notification: Notification, confirm: boolean) => {
+    if (!notification.paymentId || !notification.expenseId || !notification.groupId || !user) return;
+
+    try {
+      if (confirm) {
+        await confirmPayment(notification.paymentId, user.uid, notification.expenseId, notification.groupId);
+        await deleteNotification(notification.id, user.uid);
+        Alert.alert("Sucesso", "Pagamento confirmado!");
+      } else {
+        await rejectPayment(notification.paymentId, user.uid);
+        await deleteNotification(notification.id, user.uid);
+        Alert.alert("Sucesso", "Pagamento rejeitado");
+      }
+    } catch (error: any) {
+      Alert.alert("Erro", error.message || "Não foi possível processar o pagamento");
+    }
   };
 
   const handleFriendRequest = async (notification: Notification, accept: boolean) => {
@@ -149,6 +169,8 @@ export default function Notificacoes() {
         return "people-outline";
       case "PAYMENT_RECEIVED":
         return "cash-outline";
+      case "PAYMENT_PENDING_CONFIRMATION":
+        return "cash-outline";
       default:
         return "notifications-outline";
     }
@@ -182,6 +204,7 @@ export default function Notificacoes() {
               onPress={handleNotificationPress}
               onApproveExpense={handleApproveExpense}
               onFriendRequest={handleFriendRequest}
+              onPaymentConfirmation={handlePaymentConfirmation}
               formatTime={formatTime}
               getIcon={getNotificationIcon}
             />
@@ -198,6 +221,7 @@ type NotificationItemProps = {
   onPress: (notification: Notification) => void;
   onApproveExpense: (notification: Notification) => void;
   onFriendRequest: (notification: Notification, accept: boolean) => void;
+  onPaymentConfirmation: (notification: Notification, confirm: boolean) => void;
   formatTime: (timestamp: any) => string;
   getIcon: (type: Notification["type"]) => string;
 };
@@ -207,12 +231,14 @@ function NotificationItem({
   onPress,
   onApproveExpense,
   onFriendRequest,
+  onPaymentConfirmation,
   formatTime,
   getIcon,
 }: NotificationItemProps) {
   const isUnread = item.status === "UNREAD";
   const isExpensePending = item.type === "EXPENSE_PENDING_APPROVAL";
   const isFriendRequest = item.type === "FRIEND_REQUEST";
+  const isPaymentPending = item.type === "PAYMENT_PENDING_CONFIRMATION";
 
   return (
     <TouchableOpacity
@@ -265,6 +291,24 @@ function NotificationItem({
               onPress={() => onFriendRequest(item, true)}
             >
               <Text style={[s.actionButtonText, { color: "#fff" }]}>Aceitar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Botões de ação para pagamentos pendentes */}
+        {isPaymentPending && (
+          <View style={s.actionButtons}>
+            <TouchableOpacity
+              style={[s.actionButton, s.rejectButton]}
+              onPress={() => onPaymentConfirmation(item, false)}
+            >
+              <Text style={s.actionButtonText}>Rejeitar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.actionButton, s.approveButton]}
+              onPress={() => onPaymentConfirmation(item, true)}
+            >
+              <Text style={[s.actionButtonText, { color: "#fff" }]}>Confirmar</Text>
             </TouchableOpacity>
           </View>
         )}
