@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, ScrollView, Alert } from "react-native";
+import { View, Text, StyleSheet, Alert, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import Input from "@/components/Input";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
@@ -116,108 +116,113 @@ export default function DespesaForm({ route, navigation }: any) {
   };
 
   return (
-    <ScrollView>
-      <View style={s.container}>
-        <Input
-          label="Descrição"
-          placeholder="ex: Almoço"
-          value={descricao}
-          onChangeText={setDescricao}
-          style={s.input}
-        />
-        <Input
-          label="Valor total (€)"
-          placeholder="ex: 60"
-          value={valorTotal}
-          onChangeText={setValorTotal}
-          style={s.input}
-        />
-        <Input
-          label="Quem pagou"
-          placeholder="ex: João"
-          value={pagador}
-          onChangeText={setPagador}
-          style={s.input}
-        />
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1 }}
+    >
+      <ScrollView
+        contentContainerStyle={s.container}
+        keyboardShouldPersistTaps="handled"
+      >
+      <Input
+        label="Descrição"
+        placeholder="ex: Almoço"
+        value={descricao}
+        onChangeText={setDescricao}
+        style={s.input}
+      />
+      <Input
+        label="Valor total (€)"
+        placeholder="ex: 60"
+        value={valorTotal}
+        onChangeText={setValorTotal}
+        style={s.input}
+      />
+      <Input
+        label="Quem pagou"
+        placeholder="ex: João"
+        value={pagador}
+        onChangeText={setPagador}
+        style={s.input}
+      />
 
-        <Tab abas={["Igual", "Diferente"]} abaAtiva={abaTipo} onChange={setAbaTipo} />
+      <Tab abas={["Igual", "Diferente"]} abaAtiva={abaTipo} onChange={setAbaTipo} />
 
-        {abaTipo === "Igual" && (
-          <FlatList
-            data={valoresIndividuais.map((p) => ({
+      {abaTipo === "Igual" && (
+        <View style={{ marginTop: 12 }}>
+          {valoresIndividuais.map((p) => {
+            const item = {
               ...p,
               valor: valorTotal
                 ? (parseFloat(valorTotal.replace(",", ".")) / valoresIndividuais.length).toFixed(2) + "€"
                 : "0€",
-            }))}
-            keyExtractor={(item) => item.id}
-            renderItem={renderPessoaIgual}
-            contentContainerStyle={{ marginTop: 12 }}
-          />
-        )}
+            };
+            return <View key={item.id}>{renderPessoaIgual({ item })}</View>;
+          })}
+        </View>
+      )}
 
-        {abaTipo === "Diferente" && (
+      {abaTipo === "Diferente" && (
+        <View style={{ marginTop: 12 }}>
+          <Tab
+            abas={["Valor", "Porcentagem"]}
+            abaAtiva={abaDiferente}
+            onChange={setAbaDiferente}
+          />
           <View style={{ marginTop: 12 }}>
-            <Tab
-              abas={["Valor", "Porcentagem"]}
-              abaAtiva={abaDiferente}
-              onChange={setAbaDiferente}
-            />
-            <FlatList
-              data={valoresIndividuais}
-              keyExtractor={(item) => item.id}
-              renderItem={renderPessoaDiferente}
-              contentContainerStyle={{ marginTop: 12 }}
-            />
+            {valoresIndividuais.map((item) => (
+              <View key={item.id}>{renderPessoaDiferente({ item })}</View>
+            ))}
           </View>
-        )}
+        </View>
+      )}
 
-        {abaTipo === "Diferente" &&(
-          <Text style={{ marginTop: 12, fontWeight: "600", color: restante < 0 ? "red" : "#6B7280" }}>
-            {restante >= 0 
-              ? `Falta distribuir: ${restante.toFixed(2)}€` 
-              : `Excedeu o valor em ${Math.abs(restante).toFixed(2)}€`}
-          </Text>
-        )}
+      {abaTipo === "Diferente" && (
+        <Text style={{ marginTop: 12, fontWeight: "600", color: restante < 0 ? "red" : "#6B7280" }}>
+          {restante >= 0 
+            ? `Falta distribuir: ${restante.toFixed(2)}€` 
+            : `Excedeu o valor em ${Math.abs(restante).toFixed(2)}€`}
+        </Text>
+      )}
 
+      <Button
+        title={modo === "editar" ? "Salvar alterações" : "Adicionar despesa"}
+        style={{ marginTop: 16 }}
+      />
+
+      {modo === "editar" && (
         <Button
-          title={modo === "editar" ? "Salvar alterações" : "Adicionar despesa"}
-          style={{ marginTop: 16 }}
-        />
-
-        {modo === "editar" && (
-          <Button
-            title="Excluir despesa"
-            style={s.botaoApagar}
-            onPress={() => {
-              Alert.alert(
-                "Excluir despesa",
-                "Tem certeza que deseja excluir esta despesa?",
-                [
-                  { text: "Cancelar", style: "cancel" },
-                  {
-                    text: "Excluir",
-                    style: "destructive",
-                    onPress: () => {
-                      Alert.alert("Sucesso", "Despesa excluída com sucesso!");
-                    },
+          title="Excluir despesa"
+          style={s.botaoApagar}
+          onPress={() => {
+            Alert.alert(
+              "Excluir despesa",
+              "Tem certeza que deseja excluir esta despesa?",
+              [
+                { text: "Cancelar", style: "cancel" },
+                {
+                  text: "Excluir",
+                  style: "destructive",
+                  onPress: () => {
+                    Alert.alert("Sucesso", "Despesa excluída com sucesso!");
                   },
-                ]
-              );
-            }}
-          />
-        )}
-      </View>
-    </ScrollView>
+                },
+              ]
+            );
+          }}
+        />
+      )}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const s = StyleSheet.create({
   container: {
-    flex: 1,
     backgroundColor: colors.background,
     paddingHorizontal: 20,
     paddingTop: 16,
+    paddingBottom: 24,
   },
   input: {
     borderColor: colors.border,
