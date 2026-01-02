@@ -9,6 +9,7 @@ import {
   updatePassword,
   reauthenticateWithCredential,
   EmailAuthProvider,
+  deleteUser,
 } from "firebase/auth";
 
 import { AppUser } from "@/types/User";
@@ -74,4 +75,24 @@ export async function updateUserPassword(
   
   // Atualizar a senha
   await updatePassword(user, newPassword);
+}
+
+/**
+ * Deleta a conta do usuário
+ * Requer reautenticação antes de deletar
+ */
+export async function deleteUserAccount(currentPassword: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    throw new Error("Usuário não autenticado");
+  }
+
+  // Criar credencial para reautenticação
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  
+  // Reautenticar o usuário
+  await reauthenticateWithCredential(user, credential);
+  
+  // Deletar a conta do Firebase Auth
+  await deleteUser(user);
 }

@@ -120,40 +120,123 @@ export async function acceptFriendRequest(requestId: string): Promise<void> {
 
   const requestData = requestSnap.data() as FriendRequest;
 
-  if (requestData.status !== "PENDING") {
-    throw new Error("Esta solicitação já foi processada");
+  // Verificar se já existe relação de amizade
+  const friendsRef = collection(db, "friends");
+  const friendsQuery1 = query(
+    friendsRef,
+    where("userId", "==", requestData.fromUserId),
+    where("friendId", "==", requestData.toUserId),
+    where("status", "==", "ACCEPTED")
+  );
+  const friendsQuery2 = query(
+    friendsRef,
+    where("userId", "==", requestData.toUserId),
+    where("friendId", "==", requestData.fromUserId),
+    where("status", "==", "ACCEPTED")
+  );
+
+  let [friendsSnap1, friendsSnap2] = await Promise.all([
+    getDocs(friendsQuery1).catch(() => ({ docs: [], empty: true })),
+    getDocs(friendsQuery2).catch(() => ({ docs: [], empty: true })),
+  ]);
+
+  // Se já são amigos, apenas atualizar o status da solicitação se necessário
+  if (!friendsSnap1.empty || !friendsSnap2.empty) {
+    // Já são amigos, apenas atualizar status da solicitação se ainda estiver PENDING
+    if (requestData.status === "PENDING") {
+      await updateDoc(requestRef, {
+        status: "ACCEPTED",
+        updatedAt: Timestamp.now(),
+      });
+    }
+    return; // Retornar silenciosamente pois já são amigos
+  }
+
+  // Se a solicitação já foi processada mas não há relação de amizade, criar a relação
+  if (requestData.status !== "PENDING" && requestData.status !== "ACCEPTED") {
+    // Se foi rejeitada, não podemos aceitar
+    if (requestData.status === "REJECTED") {
+      throw new Error("Esta solicitação foi rejeitada e não pode ser aceita");
+    }
   }
 
   const now = Timestamp.now();
 
-  // Atualizar status da solicitação
-  await updateDoc(requestRef, {
-    status: "ACCEPTED",
-    updatedAt: now,
-  });
+  // Atualizar status da solicitação apenas se ainda estiver PENDING
+  if (requestData.status === "PENDING") {
+    await updateDoc(requestRef, {
+      status: "ACCEPTED",
+      updatedAt: now,
+    });
+  }
 
-  // Criar relação de amizade bidirecional
-  const friendsRef = collection(db, "friends");
-  
-  // Amizade 1: fromUserId -> toUserId
-  const friend1Ref = doc(friendsRef);
-  await setDoc(friend1Ref, {
-    id: friend1Ref.id,
-    userId: requestData.fromUserId,
-    friendId: requestData.toUserId,
-    status: "ACCEPTED",
-    createdAt: now,
-  });
+  // Verificar novamente se já existe relação antes de criar (evitar duplicação)
+  // Usar uma verificação mais ampla para pegar qualquer status
+  const checkQuery1 = query(
+    friendsRef,
+    where("userId", "==", requestData.fromUserId),
+    where("friendId", "==", requestData.toUserId)
+  );
+  const checkQuery2 = query(
+    friendsRef,
+    where("userId", "==", requestData.toUserId),
+    where("friendId", "==", requestData.fromUserId)
+  );
 
-  // Amizade 2: toUserId -> fromUserId
-  const friend2Ref = doc(friendsRef);
-  await setDoc(friend2Ref, {
-    id: friend2Ref.id,
-    userId: requestData.toUserId,
-    friendId: requestData.fromUserId,
-    status: "ACCEPTED",
-    createdAt: now,
-  });
+  const [checkSnap1, checkSnap2] = await Promise.all([
+    getDocs(checkQuery1).catch(() => ({ docs: [], empty: true })),
+    getDocs(checkQuery2).catch(() => ({ docs: [], empty: true })),
+  ]);
+
+  const existingFriend1 = checkSnap1.docs.find(d => d.exists());
+  const existingFriend2 = checkSnap2.docs.find(d => d.exists());
+
+  // Se já existe relação ACCEPTED em qualquer direção, não criar duplicata
+  if (
+    (existingFriend1 && existingFriend1.data().status === "ACCEPTED") ||
+    (existingFriend2 && existingFriend2.data().status === "ACCEPTED")
+  ) {
+    return; // Já são amigos, retornar silenciosamente
+  }
+
+  // Se existe relação mas não está ACCEPTED, atualizar para ACCEPTED
+  if (existingFriend1 && existingFriend1.data().status !== "ACCEPTED") {
+    await updateDoc(existingFriend1.ref, {
+      status: "ACCEPTED",
+      createdAt: now,
+    });
+  }
+  if (existingFriend2 && existingFriend2.data().status !== "ACCEPTED") {
+    await updateDoc(existingFriend2.ref, {
+      status: "ACCEPTED",
+      createdAt: now,
+    });
+  }
+
+  // Criar relações que não existem
+  if (!existingFriend1) {
+    // Criar relação fromUserId -> toUserId
+    const friend1Ref = doc(friendsRef);
+    await setDoc(friend1Ref, {
+      id: friend1Ref.id,
+      userId: requestData.fromUserId,
+      friendId: requestData.toUserId,
+      status: "ACCEPTED",
+      createdAt: now,
+    });
+  }
+
+  if (!existingFriend2) {
+    // Criar relação toUserId -> fromUserId
+    const friend2Ref = doc(friendsRef);
+    await setDoc(friend2Ref, {
+      id: friend2Ref.id,
+      userId: requestData.toUserId,
+      friendId: requestData.fromUserId,
+      status: "ACCEPTED",
+      createdAt: now,
+    });
+  }
 }
 
 /**

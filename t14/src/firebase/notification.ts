@@ -1,6 +1,6 @@
 // src/firebase/notification.ts
 import { db } from "./config";
-import { collection, doc, setDoc, getDoc, updateDoc, query, where, getDocs, Timestamp, onSnapshot, orderBy, limit } from "firebase/firestore";
+import { collection, doc, setDoc, getDoc, updateDoc, query, where, getDocs, Timestamp, onSnapshot, orderBy, limit, deleteDoc } from "firebase/firestore";
 
 export type NotificationType = "EXPENSE_PENDING_APPROVAL" | "EXPENSE_APPROVED" | "EXPENSE_REJECTED" | "FRIEND_REQUEST" | "MEMBER_ADDED" | "PAYMENT_RECEIVED";
 
@@ -293,12 +293,25 @@ export async function markAllNotificationsAsRead(userId: string): Promise<void> 
 }
 
 /**
- * Remove uma notificação
+ * Remove uma notificação (deleta do Firestore)
+ * Verifica se a notificação pertence ao usuário antes de deletar
  */
-export async function deleteNotification(notificationId: string): Promise<void> {
+export async function deleteNotification(notificationId: string, userId?: string): Promise<void> {
   const notificationRef = doc(db, "notifications", notificationId);
-  await updateDoc(notificationRef, {
-    status: "ARCHIVED",
-  });
+  
+  // Se userId foi fornecido, verificar se a notificação pertence ao usuário
+  if (userId) {
+    const notificationSnap = await getDoc(notificationRef);
+    if (!notificationSnap.exists()) {
+      throw new Error("Notificação não encontrada");
+    }
+    
+    const notificationData = notificationSnap.data() as Notification;
+    if (notificationData.userId !== userId) {
+      throw new Error("Você não tem permissão para deletar esta notificação");
+    }
+  }
+  
+  await deleteDoc(notificationRef);
 }
 

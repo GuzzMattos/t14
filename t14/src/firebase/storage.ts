@@ -10,9 +10,20 @@ import { storage } from "./config";
  */
 export async function uploadAvatar(userId: string, imageUri: string): Promise<string> {
   try {
-    // Converter URI para blob
-    const response = await fetch(imageUri);
-    const blob = await response.blob();
+    // Para React Native, usar XMLHttpRequest ou FormData
+    // Primeiro, converter a URI local para blob usando fetch
+    let blob: Blob;
+    
+    // Se for uma URI local (file://), usar XMLHttpRequest
+    if (imageUri.startsWith('file://') || imageUri.startsWith('content://')) {
+      // Para React Native, usar fetch com URI local
+      const response = await fetch(imageUri);
+      blob = await response.blob();
+    } else {
+      // Se for uma URL remota
+      const response = await fetch(imageUri);
+      blob = await response.blob();
+    }
     
     // Criar referência no storage
     const imageRef = ref(storage, `avatars/${userId}/${Date.now()}.jpg`);
@@ -26,7 +37,7 @@ export async function uploadAvatar(userId: string, imageUri: string): Promise<st
     return downloadURL;
   } catch (error) {
     console.error("Erro ao fazer upload do avatar:", error);
-    throw error;
+    throw new Error("Erro ao fazer upload da imagem. Verifique sua conexão e tente novamente.");
   }
 }
 

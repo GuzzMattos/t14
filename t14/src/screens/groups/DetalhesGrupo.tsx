@@ -1,10 +1,18 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Pressable, Alert, ScrollView } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Pressable, Alert, ScrollView, ActivityIndicator } from "react-native";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import Tab from "@/components/Tab";
 import Input from "@/components/Input";
+import { useAuth } from "@/contexts/AuthContext";
+import { auth, db } from "@/firebase/config";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
+import { removeMemberFromGroup, addMembersToGroup } from "@/firebase/group";
+import { Group } from "@/types/Group";
+import { getUserFromFirestore } from "@/services/user";
+import { getUserFriends } from "@/firebase/friend";
+import { observeGroupExpenses, Expense } from "@/firebase/expense";
 
 type DetalhesGrupo = {
   id: string;
@@ -50,36 +58,160 @@ const AMIGOS: Amigo[] = [
 const abas = ["Despesas", "Membros", "Saldos"];
 
 export default function DetalhesGrupo({ route, navigation }: any) {
-  const { title } = route.params;
+  const { grupoId, name } = route.params;
+  const { user } = useAuth();
   const [abaAtiva, setAbaAtiva] = useState("Despesas");
   const [pesquisarAmigo, setPesquisarAmigo] = useState<string>();
   const [selecionados, setSelecionados] = useState<string[]>([]);
-  const [amigosDoGrupo, setAmigosDoGrupo] = useState<Amigo[]>(AMIGOS.filter(a => a.admin));
+  const [group, setGroup] = useState<Group | null>(null);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
+  const [friends, setFriends] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Carregar dados do grupo
+  useEffect(() => {
+    if (!grupoId) return;
+
+    const groupRef = doc(db, "group", grupoId);
+    const unsubscribe = onSnapshot(groupRef, async (snap) => {
+      if (snap.exists()) {
+        const groupData = { id: snap.id, ...snap.data() } as Group;
+        setGroup(groupData);
+
+        // Carregar dados dos membros
+        if (groupData.memberIds) {
+          const membersData = [];
+          for (const memberId of groupData.memberIds) {
+            const memberUser = await getUserFromFirestore(memberId);
+            if (memberUser) {
+              membersData.push({
+                id: memberId,
+                nome: memberUser.name || "Usuário",
+                admin: memberId === groupData.ownerId,
+              });
+            }
+          }
+          setMembers(membersData);
+        }
+
+        setLoading(false);
+      }
+    });
+
+    return unsubscribe;
+  }, [grupoId]);
+
+  // Carregar despesas do grupo
+  useEffect(() => {
+    if (!grupoId) return;
+
+    const unsubscribe = observeGroupExpenses(grupoId, (expensesList) => {
+      const approved = expensesList.filter(e => e.status === "APPROVED");
+      setExpenses(approved);
+    });
+
+    return unsubscribe;
+  }, [grupoId]);
+
+  // Carregar amigos do usuário
+  useEffect(() => {
+    if (!user) return;
+
+    const loadFriends = async () => {
+      try {
+        const userFriends = await getUserFriends(user.uid);
+        const friendsData = [];
+        for (const friend of userFriends) {
+          const friendUser = await getUserFromFirestore(friend.friendId);
+          if (friendUser) {
+            friendsData.push({
+              id: friend.friendId,
+              nome: friendUser.name || "Usuário",
+              email: friendUser.email,
+            });
+          }
+        }
+        setFriends(friendsData);
+      } catch (error) {
+        console.error("Erro ao carregar amigos:", error);
+      }
+    };
+
+    loadFriends();
+  }, [user]);
 
   const removerAcentos = (str: string) =>
     str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
+  // Obter IDs dos membros já no grupo
+  const memberIds = group?.memberIds || [];
+  
+  // Filtrar amigos que já estão no grupo e aplicar filtro de pesquisa
+  const amigosFiltrados = friends
+    .filter(amigo => !memberIds.includes(amigo.id)) // Excluir amigos que já estão no grupo
+    .filter(amigo =>
+      pesquisarAmigo ? removerAcentos(amigo.nome).includes(removerAcentos(pesquisarAmigo)) : true
+    );
 
-  const amigosFiltrados = AMIGOS.filter(amigo =>
-    pesquisarAmigo ? removerAcentos(amigo.nome).includes(removerAcentos(pesquisarAmigo)) : true
-  );
+  const handleRemoveMember = async (memberId: string, memberName: string) => {
+    if (!user || !grupoId) return;
 
-  const adicionarSelecionados = () => {
-    const novosAmigos = AMIGOS.filter(a => selecionados.includes(a.id) && !amigosDoGrupo.find(g => g.id === a.id));
-    setAmigosDoGrupo(prev => [...prev, ...novosAmigos]);
-    setSelecionados([]);
-    console.log("Amigos selecionados: ", selecionados);
-    
+    Alert.alert(
+      "Remover membro",
+      `Tem certeza que deseja remover ${memberName} do grupo?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Remover",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await removeMemberFromGroup(grupoId, memberId, user.uid);
+              Alert.alert("Sucesso", `${memberName} foi removido do grupo`);
+            } catch (error: any) {
+              Alert.alert("Erro", error.message || "Não foi possível remover o membro");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const adicionarSelecionados = async () => {
+    if (!user || !grupoId || selecionados.length === 0) return;
+
+    try {
+      await addMembersToGroup(grupoId, selecionados, user.uid);
+      Alert.alert("Sucesso", `${selecionados.length} amigo(s) adicionado(s) ao grupo!`);
+      setSelecionados([]);
+      setPesquisarAmigo("");
+    } catch (error: any) {
+      Alert.alert("Erro", error.message || "Não foi possível adicionar os membros ao grupo");
+    }
   };
 
   const calcularTotalDespesas = () => {
-    return DESPESA.reduce((soma, item) => soma + item.despesa, 0);
+    return expenses.reduce((soma, item) => soma + item.amount, 0);
   };
+
+  const calcularMeuSaldo = () => {
+    if (!user || !group) return 0;
+    return group.balances?.[user.uid] || 0;
+  };
+
+  if (loading) {
+    return (
+      <View style={[s.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={s.container}>
       <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-        <Text style={s.title}>{title}</Text>
+        <Text style={s.title}>{group?.name || name}</Text>
         <View style={s.divider} />
       </View>
 
@@ -90,31 +222,47 @@ export default function DetalhesGrupo({ route, navigation }: any) {
           <View style={s.cardsRow}>
             <View style={[s.metricCard, { marginRight: 12 }]}>
               <Text style={s.metricLabel}>Total gasto</Text>
-              <Text style={s.metricValue}>300€</Text>
+              <Text style={s.metricValue}>{calcularTotalDespesas().toFixed(2)}€</Text>
             </View>
             <View style={s.metricCard}>
               <Text style={s.metricLabel}>Você pagou</Text>
-              <Text style={s.metricValue}>40€</Text>
+              <Text style={s.metricValue}>
+                {expenses
+                  .filter(e => e.paidBy === user?.uid)
+                  .reduce((soma, item) => soma + item.amount, 0)
+                  .toFixed(2)}€
+              </Text>
             </View>
           </View>
 
           <View style={s.cardsRow}>
             <View style={[s.metricCard, { alignItems: "center" }]}>
               <Text style={s.metricLabel}>Seu saldo</Text>
-              <Text style={[s.metricValue, { color: "#2E7D32" }]}>+40€</Text>
+              <Text style={[s.metricValue, { color: calcularMeuSaldo() >= 0 ? "#2E7D32" : "#E11D48" }]}>
+                {calcularMeuSaldo() >= 0 ? "+" : ""}{calcularMeuSaldo().toFixed(2)}€
+              </Text>
             </View>
           </View>
 
           <FlatList
-            data={DESPESA}
+            data={expenses}
             keyExtractor={(i) => i.id}
             contentContainerStyle={{ paddingBottom: 16 }}
-            renderItem={({ item }) => <Item item={item} navigation={navigation} />}
+            renderItem={({ item }) => <Item item={item} navigation={navigation} group={group} />}
             ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+            ListEmptyComponent={
+              <View style={{ padding: 20, alignItems: "center" }}>
+                <Text style={{ color: colors.label }}>Nenhuma despesa aprovada ainda</Text>
+              </View>
+            }
           />
 
           <View style={{ flexDirection: "row", gap: 10, padding: 16, alignItems: "center" }}>
-            <Button title="Nova despesa" onPress={() => navigation.navigate("DespesaForm")} style={s.botao} />
+            <Button
+              title="Nova despesa"
+              onPress={() => navigation.navigate("DespesaForm", { grupoId })}
+              style={s.botao}
+            />
             <Button 
               title="Liquidar conta" 
               onPress={() => {
@@ -136,10 +284,17 @@ export default function DetalhesGrupo({ route, navigation }: any) {
           <View>
             <Text style={[s.activitySub, {margin: 10}]}>Membros</Text>
             <FlatList
-              data={[...AMIGOS].sort((a, b) => a.nome.localeCompare(b.nome))}
+              data={[...members].sort((a, b) => a.nome.localeCompare(b.nome))}
               horizontal
               contentContainerStyle={{ paddingBottom: 16 }}
-              renderItem={({ item }) => <ListaMembros amigo={item} />}
+              renderItem={({ item }) => (
+                <ListaMembros
+                  amigo={item}
+                  grupoId={grupoId}
+                  currentUserId={user?.uid}
+                  onRemove={handleRemoveMember}
+                />
+              )}
               ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
             />
           </View>
@@ -209,45 +364,38 @@ export default function DetalhesGrupo({ route, navigation }: any) {
   );
 }
 
-function Item({ item, navigation }: { item: DetalhesGrupo; navigation: any }) {
+function Item({ item, navigation, group }: { item: Expense; navigation: any; group: Group | null }) {
+  const paidByName = group?.members?.[item.paidBy] ? "Usuário" : "Desconhecido";
+  
   return (
     <TouchableOpacity
       activeOpacity={0.8}
       style={s.activityCard}
       onPress={() =>
-        navigation.navigate("DetalheDespesa", { despesaId: item.id, title: item.title })
+        navigation.navigate("DetalheDespesa", { despesaId: item.id, title: item.description })
       }
     >
       <View style={s.avatar} />
 
       <View style={{ flex: 1 }}>
-        <Text style={s.activityTitle}>{item.title}</Text>
+        <Text style={s.activityTitle}>{item.description}</Text>
         <Text style={s.activitySub}>
-          {item.despesa}€ • {item.pessoaPagou} • {item.divisao}
+          {item.amount.toFixed(2)}€ • {paidByName} • {item.divisionType === "EQUAL" ? "Igualitária" : "Personalizada"}
         </Text>
       </View>
 
-      <TouchableOpacity
-        onPress={() =>
-          navigation.navigate("DespesaForm", {
-            modo: "editar",
-            despesa: {
-              descricao: item.title,
-              valorTotal: item.despesa.toString(),
-              pagador: item.pessoaPagou,
-              abaTipo: item.divisao,
-              abaDiferente: "Valor",
-              valoresIndividuais: [
-                { id: "1", nome: "João", valor: "40" },
-                { id: "2", nome: "Maria", valor: "30" },
-                { id: "3", nome: "Pedro", valor: "30" },
-              ],
-            },
-          })
-        }
-      >
-        <Ionicons name="pencil" size={18} color={colors.primary} />
-      </TouchableOpacity>
+      {group?.ownerId === auth.currentUser?.uid && (
+        <TouchableOpacity
+          onPress={() =>
+            navigation.navigate("DespesaForm", {
+              modo: "editar",
+              despesa: item,
+            })
+          }
+        >
+          <Ionicons name="pencil" size={18} color={colors.primary} />
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 }
@@ -280,28 +428,26 @@ function ListaAmigos({ amigo, selecionado, onPress }: ListaAmigosProps) {
   );
 }
 
-function ListaMembros({ amigo }: { amigo: Amigo}) {
-  const confirmarRemocao = () => {
-    Alert.alert(
-      "Remover amigo",
-      `Tem certeza que deseja remover ${amigo.nome} do grupo?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        { 
-          text: "Remover", 
-          style: "destructive", 
-          onPress: () => {
-            console.log(`${amigo.nome} removido`);
-          } 
-        }
-      ]
-    );
-  };
+function ListaMembros({
+  amigo,
+  grupoId,
+  currentUserId,
+  onRemove,
+}: {
+  amigo: { id: string; nome: string; admin: boolean };
+  grupoId: string;
+  currentUserId?: string;
+  onRemove: (memberId: string, memberName: string) => void;
+}) {
+  const canRemove = !amigo.admin && currentUserId;
   
   return (
     <View style={s.listaMembros}>
-      {!amigo.admin && (
-        <TouchableOpacity style={s.botaoRemover} onPress={confirmarRemocao}>
+      {canRemove && (
+        <TouchableOpacity
+          style={s.botaoRemover}
+          onPress={() => onRemove(amigo.id, amigo.nome)}
+        >
           <Ionicons name="close" size={18} color="#fff" />
         </TouchableOpacity>
       )}

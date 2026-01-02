@@ -1,13 +1,19 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  ActivityIndicator,
 } from "react-native";
 import colors from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
+import { useAuth } from "@/contexts/AuthContext";
+import { auth, db } from "@/firebase/config";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { Group } from "@/types/Group";
+import { observeUserNotifications, Notification } from "@/firebase/notification";
 
 type Activity = {
   id: string;
@@ -32,27 +38,133 @@ const ACTIVITY: Activity[] = [
 ];
 
 export default function HomeScreen() {
+  const { user } = useAuth();
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Carregar grupos do usuário
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    const q = query(
+      collection(db, "group"),
+      where("memberIds", "array-contains", user.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: Group[] = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Group[];
+      setGroups(list);
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, [user]);
+
+  // Carregar notificações recentes
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = observeUserNotifications(user.uid, (notifs) => {
+      // Pegar as 5 mais recentes
+      const recent = notifs
+        .sort((a, b) => {
+          const aTime = a.createdAt?.toDate?.()?.getTime() || 0;
+          const bTime = b.createdAt?.toDate?.()?.getTime() || 0;
+          return bTime - aTime;
+        })
+        .slice(0, 5);
+      setNotifications(recent);
+    });
+
+    return unsubscribe;
+  }, [user]);
+
+  const calcularTotalMes = () => {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    return groups.reduce((total, group) => {
+      // Somar apenas despesas aprovadas do mês atual
+      // Por enquanto, usar totalGasto do grupo
+      return total + (group.totalGasto || 0);
+    }, 0);
+  };
+
+  const calcularSaldoTotal = () => {
+    if (!user) return 0;
+    return groups.reduce((total, group) => {
+      const balance = group.balances?.[user.uid] || 0;
+      return total + balance;
+    }, 0);
+  };
+
+  const formatTime = (timestamp: any) => {
+    if (!timestamp) return "Agora";
+    
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "Agora";
+    if (diffMins < 60) return `Há ${diffMins} min`;
+    if (diffHours < 24) return `Há ${diffHours}h`;
+    if (diffDays < 7) return `Há ${diffDays} dias`;
+    
+    return date.toLocaleDateString("pt-PT");
+  };
+
+  if (loading) {
+    return (
+      <View style={[s.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  const activities = notifications.map((notif) => ({
+    id: notif.id,
+    title: notif.title,
+    group: notif.groupName || "Sistema",
+    time: formatTime(notif.createdAt),
+  }));
+
   return (
     <View style={s.container}>
-
       <View style={s.cardsRow}>
         <View style={[s.metricCard, { marginRight: 12 }]}>
           <Text style={s.metricLabel}>Total do mês</Text>
-          <Text style={s.metricValue}>300€</Text>
+          <Text style={s.metricValue}>{calcularTotalMes().toFixed(2)}€</Text>
         </View>
         <View style={s.metricCard}>
           <Text style={s.metricLabel}>Seu saldo</Text>
-          <Text style={[s.metricValue, { color: "#2E7D32" }]}>+40€</Text>
+          <Text style={[s.metricValue, { color: calcularSaldoTotal() >= 0 ? "#2E7D32" : "#E11D48" }]}>
+            {calcularSaldoTotal() >= 0 ? "+" : ""}{calcularSaldoTotal().toFixed(2)}€
+          </Text>
         </View>
       </View>
 
       <Text style={s.sectionTitle}>Atividade recente</Text>
       <FlatList
-        data={ACTIVITY}
+        data={activities}
         keyExtractor={(i) => i.id}
         contentContainerStyle={{ paddingBottom: 16 }}
         renderItem={({ item }) => <ActivityItem item={item} />}
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+        ListEmptyComponent={
+          <View style={{ padding: 20, alignItems: "center" }}>
+            <Text style={{ color: colors.label }}>Nenhuma atividade recente</Text>
+          </View>
+        }
       />
     </View>
   );

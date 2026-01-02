@@ -7,6 +7,7 @@ import colors from "@/theme/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { updateUserInFirestore } from "@/services/user";
 import { uploadAvatar, deleteAvatar } from "@/firebase/storage";
+import { formatPhoneNumber, removePhoneMask } from "@/utils/phoneMask";
 
 export default function EditProfileScreen({ navigation }: any) {
   const { user, refreshUser } = useAuth();
@@ -104,7 +105,7 @@ export default function EditProfileScreen({ navigation }: any) {
       await updateUserInFirestore(user.uid, {
         name: name.trim(),
         nickname: nickname.trim() || null,
-        phone: phone.trim() || null,
+        phone: phone.trim() ? formatPhoneNumber(phone.trim()) : null,
         avatar: avatar || null,
       }, user.email);
 
@@ -180,10 +181,14 @@ export default function EditProfileScreen({ navigation }: any) {
       />
       <Input
         label="Telefone"
-        value={phone}
-        onChangeText={setPhone}
+        value={formatPhoneNumber(phone)}
+        onChangeText={(text) => {
+          const numbers = removePhoneMask(text);
+          setPhone(numbers);
+        }}
         placeholder="Digite seu telefone"
         keyboardType="phone-pad"
+        maxLength={20}
       />
       <Input
         label="Email"

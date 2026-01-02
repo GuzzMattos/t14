@@ -15,6 +15,7 @@ import {
   observeUserNotifications,
   markNotificationAsRead,
   getUserNotifications,
+  deleteNotification,
   Notification,
 } from "@/firebase/notification";
 import { approveExpense, rejectExpense } from "@/firebase/expense";
@@ -57,7 +58,7 @@ export default function Notificacoes() {
           onPress: async () => {
             try {
               await rejectExpense(notification.expenseId!, user!.uid);
-              await markNotificationAsRead(notification.id);
+              await deleteNotification(notification.id, user!.uid);
               Alert.alert("Sucesso", "Despesa rejeitada");
             } catch (error: any) {
               Alert.alert("Erro", error.message || "Não foi possível rejeitar a despesa");
@@ -81,19 +82,38 @@ export default function Notificacoes() {
   };
 
   const handleFriendRequest = async (notification: Notification, accept: boolean) => {
-    if (!notification.friendRequestId) return;
+    if (!notification.friendRequestId || !user) return;
 
     try {
       if (accept) {
         await acceptFriendRequest(notification.friendRequestId);
+        // Deletar a notificação ao aceitar
+        await deleteNotification(notification.id, user.uid);
         Alert.alert("Sucesso", "Convite de amizade aceito!");
       } else {
         await rejectFriendRequest(notification.friendRequestId);
+        await deleteNotification(notification.id, user.uid);
         Alert.alert("Sucesso", "Convite de amizade rejeitado");
       }
-      await markNotificationAsRead(notification.id);
     } catch (error: any) {
-      Alert.alert("Erro", error.message || "Não foi possível processar o convite");
+      // Se o erro for sobre solicitação já processada mas já são amigos, deletar notificação e mostrar mensagem positiva
+      if (error.message && error.message.includes("já foi processada")) {
+        try {
+          await deleteNotification(notification.id, user.uid);
+        } catch (deleteError) {
+          console.error("Erro ao deletar notificação:", deleteError);
+        }
+        Alert.alert("Info", "Vocês já são amigos!");
+      } else if (error.message && error.message.includes("rejeitada")) {
+        Alert.alert("Info", "Esta solicitação já foi rejeitada anteriormente");
+        try {
+          await deleteNotification(notification.id, user.uid);
+        } catch (deleteError) {
+          console.error("Erro ao deletar notificação:", deleteError);
+        }
+      } else {
+        Alert.alert("Erro", error.message || "Não foi possível processar o convite");
+      }
     }
   };
 

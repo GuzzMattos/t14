@@ -8,7 +8,7 @@ import DetalheDespesa from "@/screens/groups/DetalheDespesa";
 import Pagamento from "@/screens/groups/Pagamento";
 
 export type GruposStackParamList = {
-  Grupos: undefined;
+  GroupsList: undefined;
   GrupoForm: undefined;
   DetalhesGrupo: {grupoId:string; title: string}
   DespesaForm: undefined;
@@ -26,7 +26,7 @@ export default function GruposNavigator() {
         }}
     >
       <Stack.Screen
-        name="Grupos"
+        name="GroupsList"
         component={Grupos}
         options={{ title: "Grupos" }}
       />

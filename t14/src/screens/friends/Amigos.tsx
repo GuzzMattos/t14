@@ -117,7 +117,17 @@ export default function Amigos({ navigation }: AmigosProps) {
       await loadFriends();
       await loadPendingRequests();
     } catch (error: any) {
-      Alert.alert("Erro", error.message || "Não foi possível aceitar o convite");
+      // Se o erro for sobre solicitação já processada mas já são amigos, mostrar mensagem positiva
+      if (error.message && error.message.includes("já foi processada")) {
+        Alert.alert("Info", "Vocês já são amigos!");
+        await loadFriends();
+        await loadPendingRequests();
+      } else if (error.message && error.message.includes("rejeitada")) {
+        Alert.alert("Info", "Esta solicitação já foi rejeitada anteriormente");
+        await loadPendingRequests();
+      } else {
+        Alert.alert("Erro", error.message || "Não foi possível aceitar o convite");
+      }
     } finally {
       setLoading(false);
     }
@@ -253,8 +263,8 @@ export default function Amigos({ navigation }: AmigosProps) {
             { borderColor: corBorda, borderWidth: 1, borderRadius: 5 },
           ]}
         />
-        {erro ? <Text style={styles.erroText}>{erro}</Text> : null}
-        {sucesso ? <Text style={styles.sucessoText}>{sucesso}</Text> : null}
+        {erro ? <Text style={styles.erroText}>{erro || ""}</Text> : null}
+        {sucesso ? <Text style={styles.sucessoText}>{sucesso || ""}</Text> : null}
       </View>
 
       {/* Botões */}
