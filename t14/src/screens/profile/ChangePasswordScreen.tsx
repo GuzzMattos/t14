@@ -1,51 +1,127 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Alert } from "react-native";
+import { View, Text, StyleSheet, Alert, ScrollView } from "react-native";
 import Input from "@/components/Input";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
+import { useAuth } from "@/contexts/AuthContext";
 
-export default function ChangePasswordScreen() {
-  const [o1, setO1] = useState("");
-  const [o2, setO2] = useState("");
-  const [n, setN] = useState("");
+export default function ChangePasswordScreen({ navigation }: any) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const { changePassword } = useAuth();
 
-  const save = () => {
-    if (!o1 || !o2 || !n) {
-      Alert.alert("Preencha todos os campos");
+  const validatePassword = (password: string): string | null => {
+    if (password.length < 6) {
+      return "A senha deve ter pelo menos 6 caracteres";
+    }
+    return null;
+  };
+
+  const save = async () => {
+    // Validações
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      Alert.alert("Erro", "Preencha todos os campos");
       return;
     }
-    if (o1 === n) {
-      Alert.alert("A password velha e a nova são iguais");
+
+    if (currentPassword === newPassword) {
+      Alert.alert("Erro", "A senha nova deve ser diferente da senha atual");
       return;
     }
-    if (o1 !== o2) {
-      Alert.alert("As password são diferentes");
+
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) {
+      Alert.alert("Erro", passwordError);
       return;
     }
-    const ok = Math.random() > 0.5;
-    if (!ok) {
-      Alert.alert("Password não foi alterada com sucesso");
+
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Erro", "As senhas novas não coincidem");
       return;
     }
-    Alert.alert("Password alterada com sucesso");
+
+    setLoading(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      Alert.alert(
+        "Sucesso",
+        "Senha alterada com sucesso!",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Limpar campos
+              setCurrentPassword("");
+              setNewPassword("");
+              setConfirmPassword("");
+              navigation.goBack();
+            },
+          },
+        ]
+      );
+    } catch (error: any) {
+      console.error("Erro ao alterar senha:", error);
+      let errorMessage = "Não foi possível alterar a senha.";
+
+      if (error.code === "auth/wrong-password") {
+        errorMessage = "Senha atual incorreta.";
+      } else if (error.code === "auth/weak-password") {
+        errorMessage = "A nova senha é muito fraca. Use pelo menos 6 caracteres.";
+      } else if (error.code === "auth/requires-recent-login") {
+        errorMessage = "Por segurança, faça login novamente antes de alterar a senha.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      Alert.alert("Erro", errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <View style={s.container}>
+    <ScrollView style={s.container}>
       <Text style={s.title}>Alterar Password</Text>
       <View style={s.divider} />
 
-      <Input label="Password Velha" secureTextEntry value={o1} onChangeText={setO1} />
-      <Input label="Password Velha" secureTextEntry value={o2} onChangeText={setO2} />
-      <Input label="Nova Password" secureTextEntry value={n} onChangeText={setN} />
+      <Input
+        label="Senha Atual"
+        secureTextEntry
+        value={currentPassword}
+        onChangeText={setCurrentPassword}
+        placeholder="Digite sua senha atual"
+        autoCapitalize="none"
+      />
+      <Input
+        label="Nova Senha"
+        secureTextEntry
+        value={newPassword}
+        onChangeText={setNewPassword}
+        placeholder="Digite a nova senha (mín. 6 caracteres)"
+        autoCapitalize="none"
+      />
+      <Input
+        label="Confirmar Nova Senha"
+        secureTextEntry
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+        placeholder="Confirme a nova senha"
+        autoCapitalize="none"
+      />
 
       <View style={s.saveRow}>
         <View style={{ flex: 1 }} />
         <View style={{ width: 170 }}>
-          <Button title="Guardar" onPress={save} />
+          <Button
+            title={loading ? "Alterando..." : "Guardar"}
+            onPress={save}
+            disabled={loading}
+          />
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 

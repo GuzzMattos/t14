@@ -1,9 +1,7 @@
-import React, { useState, useEffect} from "react";
+import React from "react";
 import { View, Text, StyleSheet, FlatList } from "react-native";
 import Button from "@/components/Button";
 import colors from "@/theme/colors";
-import { getDespesaFromFirestore,  } from "@/services/despesa";
-import { getAllUsers } from "@/services/user";
 
 type Pessoa = {
   id: string;
@@ -25,68 +23,36 @@ const renderPessoaIgual = ({ item }: { item: Pessoa }) => (
 );
 
 export default function DetalheDespesa({ route, navigation }: any) {
-  const { despesa } = route.params;
-  const [despesaFirebase, setDespesaFirebase] = useState<any>(null);
-  const [pagadorNome, setPagadorNome] = useState("");
-
-  console.log(despesa);
-
-  useEffect(() => {
-    async function loadDespesa() {
-      const data = await getDespesaFromFirestore(despesa.id);
-      if (data) setDespesaFirebase(data);
-    }
-    loadDespesa();
-  }, [despesa.id])
-
-  useEffect(() => {
-    async function loadPagador() {
-      const users = await getAllUsers();
-
-      const pagador = users.find(u => u.id === despesa.quemPagou);
-
-      if (pagador) {
-        setPagadorNome(pagador.name ?? "");
-      }
-    }
-    loadPagador()
-  }, [despesa.quemPagou])
-
-  console.log("DESPESA: ", despesaFirebase);
-  
-  if (!despesaFirebase) {
-    return <Text>Carregando...</Text>;
-  }
+  const { title } = route.params;
 
   return (
     <View style={s.container}>
       <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-        <Text style={s.title}>{despesa.title}</Text>
+        <Text style={s.title}>{title}</Text>
         <View style={s.divider} />
       </View>
 
       <View style={[s.metricCard, { marginBottom: 12 }]}>
         <View style={s.row}>
+          <Text style={s.metricLabel}>Grupo</Text>
+          <Text style={s.metricValue}>Viagem</Text>
+        </View>
+        <View style={s.row}>
           <Text style={s.metricLabel}>Valor Total</Text>
-          <Text style={s.metricValue}>{despesa.gasto}€</Text>
+          <Text style={s.metricValue}>1000€</Text>
         </View>
         <View style={s.row}>
           <Text style={s.metricLabel}>Quem pagou</Text>
-          <Text style={s.metricValue}>{pagadorNome}</Text>
+          <Text style={s.metricValue}>João</Text>
         </View>
       </View>
 
       <View style={[s.metricCard, { marginBottom: 12 }]}>
         <Text style={[s.metricLabel, { marginBottom: 8 }]}>Divisão</Text>
         <FlatList
-          data={despesaFirebase.valoresIndividuais}
+          data={pessoasIguais}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={s.row}>
-              <Text style={s.metricLabel}>{item.nome}</Text>
-              <Text style={s.metricLabel}>{item.valor}€</Text>
-            </View>
-          )}
+          renderItem={renderPessoaIgual}
           contentContainerStyle={{ paddingTop: 4 }}
         />
       </View>

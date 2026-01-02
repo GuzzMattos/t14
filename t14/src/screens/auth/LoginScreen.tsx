@@ -89,7 +89,6 @@ export default function LoginScreen({ navigation }: P) {
       setError(msg);
       Alert.alert("Erro", msg);
     }
-
   };
 
   const onEmailChange = (text: string) => {

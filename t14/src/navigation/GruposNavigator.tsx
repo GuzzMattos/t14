@@ -6,21 +6,15 @@ import DetalhesGrupo from "@/screens/groups/DetalhesGrupo";
 import DespesaForm from "@/screens/groups/DespesaForm";
 import DetalheDespesa from "@/screens/groups/DetalheDespesa";
 import Pagamento from "@/screens/groups/Pagamento";
-import { Group } from "@/types/Group";
 
 export type GruposStackParamList = {
-  Grupos: undefined;
-  GrupoForm:
-    | {
-        modo?: "criar" | "editar";
-        grupo?: Group;
-      }
-    | undefined;
-  DetalhesGrupo: { grupoId: string; name: string };
+  GroupsList: undefined;
+  GrupoForm: undefined;
+  DetalhesGrupo: {grupoId:string; title: string}
   DespesaForm: undefined;
   DetalheDespesa: { despesaId: string };
   Pagamento: undefined;
-};  
+};
 
 const Stack = createNativeStackNavigator<GruposStackParamList>();
 
@@ -32,7 +26,7 @@ export default function GruposNavigator() {
         }}
     >
       <Stack.Screen
-        name="Grupos"
+        name="GroupsList"
         component={Grupos}
         options={{ title: "Grupos" }}
       />

@@ -14,8 +14,9 @@ import {
   sendPasswordReset,
   mapFirebaseUser,
   registerWithEmail,
+  updateUserPassword,
 } from "@/firebase/auth";
-import { createUserInFirestore } from "@/services/user";
+import { createUserInFirestore, getUserFromFirestore } from "@/services/user";
 import { AppUser } from "@/types/User";
 
 
@@ -29,6 +30,8 @@ type AuthContextData = {
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextData | undefined>(undefined);
@@ -41,8 +44,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // Observa login/logout do Firebase
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(mapFirebaseUser(firebaseUser));
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // Buscar dados completos do Firestore
+        const firestoreUser = await getUserFromFirestore(firebaseUser.uid);
+        if (firestoreUser) {
+          setUser({
+            uid: firestoreUser.id,
+            email: firestoreUser.email,
+            name: firestoreUser.name ?? null,
+            nickname: firestoreUser.nickname ?? null,
+            phone: firestoreUser.phone ?? null,
+            avatar: firestoreUser.avatar ?? null,
+          });
+        } else {
+          // Se não existir no Firestore, usar dados básicos do Auth
+          setUser(mapFirebaseUser(firebaseUser));
+        }
+      } else {
+        setUser(null);
+      }
       setInitializing(false);
     });
     return () => unsub();
@@ -52,12 +73,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoggingIn(true);
     try {
       const appUser = await loginWithEmail(email, password);
-      setUser(appUser);
+      // Buscar dados completos do Firestore
+      const firestoreUser = await getUserFromFirestore(appUser.uid);
+      if (firestoreUser) {
+        setUser({
+          uid: firestoreUser.id,
+          email: firestoreUser.email,
+          name: firestoreUser.name ?? null,
+          nickname: firestoreUser.nickname ?? null,
+          phone: firestoreUser.phone ?? null,
+          avatar: firestoreUser.avatar ?? null,
+          notificationsEnabled: firestoreUser.notificationsEnabled ?? true,
+        });
+      } else {
+        setUser(appUser);
+      }
     } finally {
       setLoggingIn(false);
     }
   };
-
 
   // REGISTO (sem email de verificação por enquanto)
   const register = async (name: string, email: string, password: string) => {
@@ -92,6 +126,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await sendPasswordReset(email);
   };
 
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    await updateUserPassword(currentPassword, newPassword);
+  };
+
+  const refreshUser = async () => {
+    if (user) {
+      const firestoreUser = await getUserFromFirestore(user.uid);
+      if (firestoreUser) {
+        setUser({
+          uid: firestoreUser.id,
+          email: firestoreUser.email,
+          name: firestoreUser.name ?? null,
+          nickname: firestoreUser.nickname ?? null,
+          phone: firestoreUser.phone ?? null,
+          avatar: firestoreUser.avatar ?? null,
+          notificationsEnabled: firestoreUser.notificationsEnabled ?? true,
+        });
+      }
+    }
+  };
+
   const value: AuthContextData = {
     user,
     initializing,
@@ -101,6 +156,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     register,
     logout,
     resetPassword,
+    changePassword,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

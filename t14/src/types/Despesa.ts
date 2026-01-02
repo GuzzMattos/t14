@@ -1,5 +1,3 @@
-import { AppUser } from "./User";
-
 export type DespesaTipo = "Igual" | "Diferente"
 export type DespesaDiferente = "Valor" | "Porcentagem"
 

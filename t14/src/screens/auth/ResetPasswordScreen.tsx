@@ -21,10 +21,17 @@ export default function ResetPasswordScreen({ navigation }: P) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
   const { resetPassword } = useAuth();
+
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
 
   const onSubmit = async () => {
     setError("");
+    setSent(false);
 
     if (!email.trim()) {
       const msg = "Informe o email.";
@@ -33,12 +40,20 @@ export default function ResetPasswordScreen({ navigation }: P) {
       return;
     }
 
+    if (!validateEmail(email.trim())) {
+      const msg = "Email inválido.";
+      setError(msg);
+      Alert.alert("Erro", msg);
+      return;
+    }
+
+    setLoading(true);
     try {
       await resetPassword(email.trim());
       setSent(true);
       Alert.alert(
         "Email enviado",
-        "Se existir uma conta com esse email, enviámos um link para redefinir a palavra-passe.",
+        "Se existir uma conta com esse email, enviámos um link para redefinir a palavra-passe. Verifique a sua caixa de entrada e a pasta de spam.",
         [
           {
             text: "OK",
@@ -47,17 +62,40 @@ export default function ResetPasswordScreen({ navigation }: P) {
         ]
       );
     } catch (err: any) {
-      console.log(err);
+      console.log("Erro ao enviar email de recuperação:", err);
       let msg = "Não foi possível enviar o email de recuperação.";
+      let shouldShowAsSent = false;
 
       if (err.code === "auth/user-not-found") {
-        msg = "Não existe utilizador com esse email.";
+        // Por segurança, não revelamos se o email existe ou não
+        msg = "Se existir uma conta com esse email, enviámos um link para redefinir a palavra-passe.";
+        shouldShowAsSent = true;
+        setSent(true);
       } else if (err.code === "auth/invalid-email") {
         msg = "Email inválido.";
+        setError(msg);
+      } else if (err.code === "auth/too-many-requests") {
+        msg = "Muitas tentativas. Por favor, aguarde alguns minutos antes de tentar novamente.";
+        setError(msg);
       }
 
-      setError(msg);
-      Alert.alert("Erro", msg);
+      if (shouldShowAsSent) {
+        Alert.alert(
+          "Email enviado",
+          msg,
+          [
+            {
+              text: "OK",
+              onPress: () => navigation.navigate("Login"),
+            },
+          ]
+        );
+      } else {
+        setError(msg);
+        Alert.alert("Erro", msg);
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -92,7 +130,11 @@ export default function ResetPasswordScreen({ navigation }: P) {
           </Text>
         )}
 
-        <Button title="Enviar link de recuperação" onPress={onSubmit} />
+        <Button
+          title={loading ? "Enviando..." : "Enviar link de recuperação"}
+          onPress={onSubmit}
+          disabled={loading || sent}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -1,12 +1,12 @@
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 
-type TabProps<T extends string> = {
-  abas: T[];
-  abaAtiva: T;
-  onChange: (aba: T) => void;
-};
+type TabProps = {
+    abas: string[],
+    abaAtiva: string,
+    onChange: (aba:string) => void;
+}
 
-export default function Tab<T extends string>({ abas, abaAtiva, onChange, }: TabProps<T>) {
+export default function Tab({ abas, abaAtiva, onChange}: TabProps) {
   return (
     <View style={s.container}>
       {abas.map((aba) => (
