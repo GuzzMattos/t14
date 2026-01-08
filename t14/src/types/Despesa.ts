@@ -1,5 +1,6 @@
 export type DespesaTipo = "Igual" | "Diferente"
 export type DespesaDiferente = "Valor" | "Porcentagem"
+export type DespesaStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED"
 
 export type DespesaPessoa = {
     id: string;
@@ -16,10 +17,11 @@ export type Despesa = {
     abaTipo: DespesaTipo;
     abaDiferente: DespesaDiferente;
     valoresIndividuais: DespesaPessoa[];
-    
+
     createdAt?: any;
     updatedAt?: any;
     lastActivityAt?: any;
 
     createdBy?: string;
+    status?: DespesaStatus;
 }

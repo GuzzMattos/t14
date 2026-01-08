@@ -28,6 +28,7 @@ export default function DetalheDespesa({ route, navigation }: any) {
   const [payerName, setPayerName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [userDebt, setUserDebt] = useState<number>(0);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadExpense() {
@@ -37,13 +38,20 @@ export default function DetalheDespesa({ route, navigation }: any) {
       }
 
       try {
+        console.log("🔍 Carregando despesa ID:", despesaId);
+        console.log("👤 Usuário atual:", user?.uid);
+
         // Carregar despesa
         const expenseData = await getExpenseById(despesaId);
+        console.log("📦 Despesa carregada:", expenseData);
+
         if (!expenseData) {
+          console.log("❌ Despesa não encontrada");
           setLoading(false);
           return;
         }
 
+        console.log("✅ Despesa encontrada, groupId:", expenseData.groupId);
         setExpense(expenseData);
 
         // Carregar nome do grupo
@@ -65,11 +73,14 @@ export default function DetalheDespesa({ route, navigation }: any) {
         if (expenseData.divisions && expenseData.divisions.length > 0) {
           const divisionsData: DivisionDisplay[] = [];
           let foundUserDivision = false;
-          
+
           for (const division of expenseData.divisions) {
             const divisionUser = await getUserFromFirestore(division.userId);
-            const totalPago = await getTotalPagoPorUsuario(expenseData.id, division.userId);
-            const remaining = Math.max(0, division.amount - totalPago);
+
+            // Usar o campo 'paid' da divisão direto da despesa
+            const isPaid = division.paid === true;
+            const totalPago = isPaid ? division.amount : 0;
+            const remaining = isPaid ? 0 : division.amount;
 
             divisionsData.push({
               userId: division.userId,
@@ -99,8 +110,17 @@ export default function DetalheDespesa({ route, navigation }: any) {
         }
 
         setLoading(false);
-      } catch (error) {
-        console.error("Erro ao carregar despesa:", error);
+      } catch (error: any) {
+        console.error("❌ Erro ao carregar despesa:", error);
+        console.error("❌ Mensagem:", error.message);
+        console.error("❌ Código:", error.code);
+
+        if (error.code === 'permission-denied' || error.message?.includes('permission')) {
+          setError("Sem permissão para acessar esta despesa. Verifique se você é membro do grupo.");
+        } else {
+          setError(`Erro ao carregar: ${error.message || 'Erro desconhecido'}`);
+        }
+
         setLoading(false);
       }
     }
@@ -137,7 +157,26 @@ export default function DetalheDespesa({ route, navigation }: any) {
   if (!expense) {
     return (
       <SafeAreaView style={s.container} edges={['top']}>
-        <Text style={s.title}>Despesa não encontrada</Text>
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          {error ? (
+            <>
+              <Text style={[s.title, { color: colors.danger, textAlign: 'center', marginBottom: 10 }]}>
+                ⚠️ Erro
+              </Text>
+              <Text style={{ color: colors.label, textAlign: 'center', marginBottom: 20 }}>
+                {error}
+              </Text>
+              <Text style={{ color: colors.label, fontSize: 12, textAlign: 'center' }}>
+                💡 Dica: Verifique se as regras do Firestore foram aplicadas corretamente.
+              </Text>
+              <Text style={{ color: colors.label, fontSize: 12, textAlign: 'center', marginTop: 10 }}>
+                Consulte: DIAGNOSTICO_AVANCADO.md
+              </Text>
+            </>
+          ) : (
+            <Text style={s.title}>Despesa não encontrada</Text>
+          )}
+        </View>
       </SafeAreaView>
     );
   }
@@ -147,122 +186,122 @@ export default function DetalheDespesa({ route, navigation }: any) {
   return (
     <SafeAreaView style={s.container} edges={['top']}>
       <ScrollView>
-      <View style={{ paddingHorizontal: 16 }}>
-        <Text style={s.title}>{expense.description || title}</Text>
-        <View style={s.divider} />
-      </View>
+        <View style={{ paddingHorizontal: 16 }}>
+          <Text style={s.title}>{expense.description || title}</Text>
+          <View style={s.divider} />
+        </View>
 
-      <View style={[s.metricCard, { marginBottom: 12, marginHorizontal: 16 }]}>
-        <View style={s.row}>
-          <Text style={s.metricLabel}>Grupo</Text>
-          <Text style={s.metricValue}>{groupName || "N/A"}</Text>
-        </View>
-        <View style={s.row}>
-          <Text style={s.metricLabel}>Valor Total</Text>
-          <Text style={s.metricValue}>{expense.amount.toFixed(2)}€</Text>
-        </View>
-        <View style={s.row}>
-          <Text style={s.metricLabel}>Quem pagou</Text>
-          <Text style={s.metricValue}>{payerName}</Text>
-        </View>
-        <View style={s.row}>
-          <Text style={s.metricLabel}>Status</Text>
-          <Text style={s.metricValue}>
-            {expense.status === "APPROVED" ? "Aprovada" : 
-             expense.status === "PENDING_APPROVAL" ? "Pendente" : "Rejeitada"}
-          </Text>
-        </View>
-        <View style={s.row}>
-          <Text style={s.metricLabel}>Tipo de divisão</Text>
-          <Text style={s.metricValue}>
-            {expense.divisionType === "EQUAL" ? "Igualitária" : 
-             expense.divisionType === "PERCENTAGE" ? "Por porcentagem" : "Personalizada"}
-          </Text>
-        </View>
-      </View>
-
-      <View style={[s.metricCard, { marginBottom: 12, marginHorizontal: 16 }]}>
-        <Text style={[s.metricLabel, { marginBottom: 8 }]}>Divisão</Text>
-        {divisions.map((item, index) => (
-          <View key={item.userId}>
-            {index > 0 && <View style={{ height: 8 }} />}
-            <View style={s.divisionRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.divisionName}>{item.userName}</Text>
-                {item.percentage !== undefined && (
-                  <Text style={s.divisionSubtext}>{item.percentage.toFixed(1)}%</Text>
-                )}
-              </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={s.divisionAmount}>{item.amount.toFixed(2)}€</Text>
-                {item.paid > 0 && (
-                  <Text style={s.divisionPaid}>Pago: {item.paid.toFixed(2)}€</Text>
-                )}
-                {item.remaining > 0 && (
-                  <Text style={[s.divisionRemaining, { color: "#E11D48" }]}>
-                    Restante: {item.remaining.toFixed(2)}€
-                  </Text>
-                )}
-                {item.remaining === 0 && item.paid > 0 && (
-                  <Text style={[s.divisionRemaining, { color: "#2E7D32" }]}>
-                    ✓ Pago
-                  </Text>
-                )}
-                {item.remaining > 0 && (
-                  <Text style={[s.divisionRemaining, { color: "#E11D48" }]}>
-                    A pagar: {item.remaining.toFixed(2)}€
-                  </Text>
-                )}
-              </View>
-            </View>
+        <View style={[s.metricCard, { marginBottom: 12, marginHorizontal: 16 }]}>
+          <View style={s.row}>
+            <Text style={s.metricLabel}>Grupo</Text>
+            <Text style={s.metricValue}>{groupName || "N/A"}</Text>
           </View>
-        ))}
-      </View>
-
-      {canPay && (
-        <View style={{ paddingHorizontal: 16, marginBottom: 20 }}>
-          <View style={{ marginBottom: 12 }}>
-            <Text style={[s.metricLabel, { marginBottom: 8 }]}>
-              Você deve: {userDebt.toFixed(2)}€
+          <View style={s.row}>
+            <Text style={s.metricLabel}>Valor Total</Text>
+            <Text style={s.metricValue}>{expense.amount.toFixed(2)}€</Text>
+          </View>
+          <View style={s.row}>
+            <Text style={s.metricLabel}>Quem pagou</Text>
+            <Text style={s.metricValue}>{payerName}</Text>
+          </View>
+          <View style={s.row}>
+            <Text style={s.metricLabel}>Status</Text>
+            <Text style={s.metricValue}>
+              {expense.status === "APPROVED" ? "Aprovada" :
+                expense.status === "PENDING_APPROVAL" ? "Pendente" : "Rejeitada"}
             </Text>
           </View>
-          <Button
-            title="Quitar parcialmente"
-            onPress={handlePagarParcial}
-            variant="outline"
-            style={{ marginBottom: 10 }}
-          />
-          <Button
-            title="Quitar totalmente"
-            onPress={handlePagarTotal}
-            style={{ marginBottom: 10 }}
-          />
+          <View style={s.row}>
+            <Text style={s.metricLabel}>Tipo de divisão</Text>
+            <Text style={s.metricValue}>
+              {expense.divisionType === "EQUAL" ? "Igualitária" :
+                expense.divisionType === "PERCENTAGE" ? "Por porcentagem" : "Personalizada"}
+            </Text>
+          </View>
         </View>
-      )}
 
-      {!canPay && userDebt === 0 && expense.status === "APPROVED" && divisions.length > 0 && (
-        <View style={{ paddingHorizontal: 16, marginBottom: 20 }}>
-          <Text style={[s.metricLabel, { textAlign: "center", color: "#2E7D32" }]}>
-            ✓ Você já quitou sua parte desta despesa
-          </Text>
+        <View style={[s.metricCard, { marginBottom: 12, marginHorizontal: 16 }]}>
+          <Text style={[s.metricLabel, { marginBottom: 8 }]}>Divisão</Text>
+          {divisions.map((item, index) => (
+            <View key={item.userId}>
+              {index > 0 && <View style={{ height: 8 }} />}
+              <View style={s.divisionRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.divisionName}>{item.userName}</Text>
+                  {item.percentage !== undefined && (
+                    <Text style={s.divisionSubtext}>{item.percentage.toFixed(1)}%</Text>
+                  )}
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={s.divisionAmount}>{item.amount.toFixed(2)}€</Text>
+                  {item.paid > 0 && (
+                    <Text style={s.divisionPaid}>Pago: {item.paid.toFixed(2)}€</Text>
+                  )}
+                  {item.remaining > 0 && (
+                    <Text style={[s.divisionRemaining, { color: "#E11D48" }]}>
+                      Restante: {item.remaining.toFixed(2)}€
+                    </Text>
+                  )}
+                  {item.remaining === 0 && item.paid > 0 && (
+                    <Text style={[s.divisionRemaining, { color: "#2E7D32" }]}>
+                      ✓ Pago
+                    </Text>
+                  )}
+                  {item.remaining > 0 && (
+                    <Text style={[s.divisionRemaining, { color: "#E11D48" }]}>
+                      A pagar: {item.remaining.toFixed(2)}€
+                    </Text>
+                  )}
+                </View>
+              </View>
+            </View>
+          ))}
         </View>
-      )}
 
-      {!canPay && userDebt === 0 && expense.status === "APPROVED" && divisions.length === 0 && (
-        <View style={{ paddingHorizontal: 16, marginBottom: 20 }}>
-          <Text style={[s.metricLabel, { textAlign: "center", color: "#6B7280" }]}>
-            Você não está incluído nesta despesa
-          </Text>
-        </View>
-      )}
+        {canPay && (
+          <View style={{ paddingHorizontal: 16, marginBottom: 20 }}>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={[s.metricLabel, { marginBottom: 8 }]}>
+                Você deve: {userDebt.toFixed(2)}€
+              </Text>
+            </View>
+            <Button
+              title="Quitar parcialmente"
+              onPress={handlePagarParcial}
+              variant="outline"
+              style={{ marginBottom: 10 }}
+            />
+            <Button
+              title="Quitar totalmente"
+              onPress={handlePagarTotal}
+              style={{ marginBottom: 10 }}
+            />
+          </View>
+        )}
 
-      {expense.status !== "APPROVED" && (
-        <View style={{ paddingHorizontal: 16, marginBottom: 20 }}>
-          <Text style={[s.metricLabel, { textAlign: "center", color: "#6B7280" }]}>
-            Esta despesa ainda não foi aprovada
-          </Text>
-        </View>
-      )}
+        {!canPay && userDebt === 0 && expense.status === "APPROVED" && divisions.length > 0 && (
+          <View style={{ paddingHorizontal: 16, marginBottom: 20 }}>
+            <Text style={[s.metricLabel, { textAlign: "center", color: "#2E7D32" }]}>
+              ✓ Você já quitou sua parte desta despesa
+            </Text>
+          </View>
+        )}
+
+        {!canPay && userDebt === 0 && expense.status === "APPROVED" && divisions.length === 0 && (
+          <View style={{ paddingHorizontal: 16, marginBottom: 20 }}>
+            <Text style={[s.metricLabel, { textAlign: "center", color: "#6B7280" }]}>
+              Você não está incluído nesta despesa
+            </Text>
+          </View>
+        )}
+
+        {expense.status !== "APPROVED" && (
+          <View style={{ paddingHorizontal: 16, marginBottom: 20 }}>
+            <Text style={[s.metricLabel, { textAlign: "center", color: "#6B7280" }]}>
+              Esta despesa ainda não foi aprovada
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

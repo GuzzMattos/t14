@@ -2,7 +2,7 @@
 import { db } from "./config";
 import { collection, doc, setDoc, getDoc, updateDoc, query, where, getDocs, Timestamp, onSnapshot, orderBy, limit, deleteDoc } from "firebase/firestore";
 
-export type NotificationType = "EXPENSE_PENDING_APPROVAL" | "EXPENSE_APPROVED" | "EXPENSE_REJECTED" | "FRIEND_REQUEST" | "MEMBER_ADDED" | "PAYMENT_RECEIVED" | "PAYMENT_PENDING_CONFIRMATION";
+export type NotificationType = "EXPENSE_PENDING_APPROVAL" | "EXPENSE_APPROVED" | "EXPENSE_REJECTED" | "FRIEND_REQUEST" | "MEMBER_ADDED" | "GROUP_CREATED" | "PAYMENT_RECEIVED" | "PAYMENT_PENDING_CONFIRMATION";
 
 export type NotificationStatus = "UNREAD" | "READ" | "ARCHIVED";
 
@@ -11,18 +11,18 @@ export type Notification = {
   userId: string; // Usuário que recebe a notificação
   type: NotificationType;
   status: NotificationStatus;
-  
+
   // Dados da notificação
   title: string;
   message: string;
-  
+
   // Dados relacionados (opcionais)
   groupId?: string;
   expenseId?: string;
   fromUserId?: string;
   friendRequestId?: string;
   paymentId?: string; // ID do pagamento
-  
+
   // Metadados
   createdAt: any;
   readAt?: any;
@@ -53,7 +53,7 @@ export async function createNotification(notification: Omit<Notification, "id" |
       console.log('🔔 Enviando push notification para:', notification.userId);
       console.log('📝 Título:', notification.title);
       console.log('📝 Mensagem:', notification.message);
-      
+
       const { sendPushNotification } = await import("@/services/sendPushNotification");
       await sendPushNotification(
         notification.userId,
@@ -89,7 +89,7 @@ export async function createExpenseApprovalNotification(
   payerName: string,
   amount: number,
   description: string
-): Promise<string> {
+): Promise<string | null> {
   return await createNotification({
     userId: groupOwnerId,
     type: "EXPENSE_PENDING_APPROVAL",
@@ -109,7 +109,7 @@ export async function createExpenseApprovedNotification(
   expenseId: string,
   groupId: string,
   description: string
-): Promise<string> {
+): Promise<string | null> {
   return await createNotification({
     userId,
     type: "EXPENSE_APPROVED",
@@ -129,7 +129,7 @@ export async function createExpenseRejectedNotification(
   expenseId: string,
   groupId: string,
   description: string
-): Promise<string> {
+): Promise<string | null> {
   return await createNotification({
     userId,
     type: "EXPENSE_REJECTED",
@@ -149,7 +149,7 @@ export async function createFriendRequestNotification(
   fromUserId: string,
   friendRequestId: string,
   fromUserName: string
-): Promise<string> {
+): Promise<string | null> {
   return await createNotification({
     userId: toUserId,
     type: "FRIEND_REQUEST",
@@ -162,7 +162,8 @@ export async function createFriendRequestNotification(
 }
 
 /**
- * Cria notificação de membro adicionado ao grupo
+ * Cria notificação de membro adicionado ao grupo (atividade recente, sem necessidade de ação)
+ * Esta notificação serve como registro de atividade e NÃO envia push notification
  */
 export async function createMemberAddedNotification(
   userId: string,
@@ -170,14 +171,57 @@ export async function createMemberAddedNotification(
   groupName: string,
   addedByName: string
 ): Promise<string> {
-  return await createNotification({
+  // Notificação de atividade - já marcada como lida, não precisa de ação
+  const notificationsRef = collection(db, "notifications");
+  const notificationRef = doc(notificationsRef);
+  const now = Timestamp.now();
+
+  await setDoc(notificationRef, {
+    id: notificationRef.id,
     userId,
     type: "MEMBER_ADDED",
-    status: "UNREAD",
-    title: "Você foi adicionado a um grupo",
+    status: "READ", // Já marcado como lido (apenas atividade recente, não requer ação)
+    title: "Adicionado a um grupo",
     message: `${addedByName} adicionou você ao grupo "${groupName}"`,
     groupId,
+    createdAt: now,
+    readAt: now,
   });
+
+  // NÃO envia push notification para atividades recentes (apenas registro no app)
+  console.log("✅ Notificação de atividade criada (membro adicionado) - sem push");
+  return notificationRef.id;
+}
+
+/**
+ * Cria notificação quando um grupo é criado (atividade recente, sem necessidade de ação)
+ * Esta notificação serve como registro de atividade e NÃO envia push notification
+ */
+export async function createGroupCreatedNotification(
+  userId: string,
+  groupId: string,
+  groupName: string
+): Promise<string> {
+  // Notificação de atividade - já marcada como lida, não precisa de ação
+  const notificationsRef = collection(db, "notifications");
+  const notificationRef = doc(notificationsRef);
+  const now = Timestamp.now();
+
+  await setDoc(notificationRef, {
+    id: notificationRef.id,
+    userId,
+    type: "GROUP_CREATED",
+    status: "READ", // Já marcado como lido (apenas atividade recente, não requer ação)
+    title: "Grupo criado",
+    message: `Você criou o grupo "${groupName}"`,
+    groupId,
+    createdAt: now,
+    readAt: now,
+  });
+
+  // NÃO envia push notification para atividades recentes (apenas registro no app)
+  console.log("✅ Notificação de atividade criada (grupo criado) - sem push");
+  return notificationRef.id;
 }
 
 /**
@@ -191,7 +235,7 @@ export async function createPaymentNotification(
   payerName: string,
   amount: number,
   expenseDescription: string
-): Promise<string> {
+): Promise<string | null> {
   return await createNotification({
     userId: expenseCreatorId,
     type: "PAYMENT_PENDING_CONFIRMATION",
@@ -202,6 +246,39 @@ export async function createPaymentNotification(
     expenseId,
     paymentId,
   });
+}
+
+/**
+ * Cria notificação quando usuário paga uma despesa (atividade recente, sem necessidade de ação)
+ * Esta notificação serve como registro de atividade e NÃO envia push notification
+ */
+export async function createPaymentMadeNotification(
+  payerId: string,
+  expenseId: string,
+  groupId: string,
+  amount: number,
+  expenseDescription: string
+): Promise<string> {
+  const notificationsRef = collection(db, "notifications");
+  const notificationRef = doc(notificationsRef);
+  const now = Timestamp.now();
+
+  await setDoc(notificationRef, {
+    id: notificationRef.id,
+    userId: payerId,
+    type: "PAYMENT_RECEIVED", // Tipo de atividade (registro de pagamento feito)
+    status: "READ", // Já marcado como lido (apenas atividade recente, não requer ação)
+    title: "Pagamento registrado",
+    message: `Você pagou ${amount.toFixed(2)}€ da despesa "${expenseDescription}"`,
+    groupId,
+    expenseId,
+    createdAt: now,
+    readAt: now,
+  });
+
+  // NÃO envia push notification para atividades recentes (apenas registro no app)
+  console.log("✅ Notificação de atividade criada (pagamento registrado) - sem push");
+  return notificationRef.id;
 }
 
 /**
@@ -223,7 +300,7 @@ export async function isNotificationsEnabled(userId: string): Promise<boolean> {
  */
 export async function getUserNotifications(userId: string, limitCount: number = 50): Promise<Notification[]> {
   const notificationsRef = collection(db, "notifications");
-  
+
   // Se não usar orderBy, não precisa de índice composto
   // Mas vamos tentar com orderBy primeiro, se falhar, fazemos sem
   try {
@@ -269,14 +346,14 @@ export async function getUserNotifications(userId: string, limitCount: number = 
 }
 
 /**
- * Observa notificações de um usuário em tempo real
+ * Observa notificações de um usuário em tempo real (apenas não arquivadas)
  */
 export function observeUserNotifications(
   userId: string,
   callback: (notifications: Notification[]) => void
 ): () => void {
   const notificationsRef = collection(db, "notifications");
-  
+
   // Query sem orderBy para evitar necessidade de índice composto
   // Ordenamos em memória
   const q = query(
@@ -290,14 +367,17 @@ export function observeUserNotifications(
       id: doc.id,
       ...doc.data(),
     })) as Notification[];
-    
+
+    // Filtrar notificações arquivadas
+    const notArchived = notifications.filter(n => n.status !== "ARCHIVED");
+
     // Ordenar em memória por data
-    const sorted = notifications.sort((a, b) => {
+    const sorted = notArchived.sort((a, b) => {
       const aTime = a.createdAt?.toDate?.()?.getTime() || 0;
       const bTime = b.createdAt?.toDate?.()?.getTime() || 0;
       return bTime - aTime;
     }).slice(0, 50);
-    
+
     callback(sorted);
   }, (error) => {
     console.error("Erro ao observar notificações:", error);
@@ -349,20 +429,30 @@ export async function markAllNotificationsAsRead(userId: string): Promise<void> 
  */
 export async function deleteNotification(notificationId: string, userId?: string): Promise<void> {
   const notificationRef = doc(db, "notifications", notificationId);
-  
+
   // Se userId foi fornecido, verificar se a notificação pertence ao usuário
   if (userId) {
     const notificationSnap = await getDoc(notificationRef);
     if (!notificationSnap.exists()) {
       throw new Error("Notificação não encontrada");
     }
-    
+
     const notificationData = notificationSnap.data() as Notification;
     if (notificationData.userId !== userId) {
       throw new Error("Você não tem permissão para deletar esta notificação");
     }
   }
-  
+
   await deleteDoc(notificationRef);
+}
+
+/**
+ * Arquiva uma notificação (oculta após ação concluída)
+ */
+export async function archiveNotification(notificationId: string): Promise<void> {
+  const notificationRef = doc(db, "notifications", notificationId);
+  await updateDoc(notificationRef, {
+    status: "ARCHIVED",
+  });
 }
 

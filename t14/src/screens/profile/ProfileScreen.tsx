@@ -16,7 +16,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { updateUserInFirestore } from "@/services/user";
 import { displayPhone } from "@/utils/phoneMask";
 import { deleteUserAccount } from "@/firebase/auth";
-import { doc, deleteDoc, collection, query, where, getDocs, writeBatch } from "firebase/firestore";
+import { doc, deleteDoc, collection, query, where, getDocs, writeBatch, Timestamp } from "firebase/firestore";
 import { db } from "@/firebase/config";
 import PasswordModal from "@/components/PasswordModal";
 
@@ -40,13 +40,13 @@ export default function ProfileScreen({ navigation }: any) {
 
   const handleToggleNotifications = async (value: boolean) => {
     if (!user) return;
-    
+
     setSaving(true);
     try {
       await updateUserInFirestore(user.uid, {
         notificationsEnabled: value,
       }, user.email);
-      
+
       setNotif(value);
       await refreshUser();
     } catch (error) {
@@ -62,10 +62,61 @@ export default function ProfileScreen({ navigation }: any) {
     if (!user) return;
 
     try {
-      // Deletar dados do Firestore
-      const userRef = doc(db, "users", user.uid);
-      
+      console.log("🗑️ Iniciando deleção de conta para usuário:", user.uid);
+
+      // 1. Verificar grupos onde o usuário é dono
+      console.log("🔍 Verificando grupos onde é dono...");
+      const groupsRef = collection(db, "group");
+      const ownerGroupsQuery = query(groupsRef, where("ownerId", "==", user.uid));
+      const ownerGroupsSnap = await getDocs(ownerGroupsQuery);
+
+      if (ownerGroupsSnap.size > 0) {
+        console.log(`⚠️ Usuário é dono de ${ownerGroupsSnap.size} grupo(s)`);
+        Alert.alert(
+          "Atenção",
+          `Você é dono de ${ownerGroupsSnap.size} grupo(s). Transfira a propriedade ou exclua os grupos antes de deletar sua conta.`
+        );
+        setShowPasswordModal(false);
+        return;
+      }
+
+      // 2. Remover usuário de grupos onde é membro (PRIMEIRO, antes do batch)
+      console.log("🔍 Buscando grupos onde é membro...");
+      const memberGroupsQuery = query(groupsRef, where("memberIds", "array-contains", user.uid));
+      const memberGroupsSnap = await getDocs(memberGroupsQuery);
+
+      console.log(`✅ Encontrados ${memberGroupsSnap.size} grupos onde é membro`);
+
+      if (memberGroupsSnap.size > 0) {
+        const groupBatch = writeBatch(db);
+
+        for (const groupDoc of memberGroupsSnap.docs) {
+          const groupData = groupDoc.data();
+          const updatedMemberIds = (groupData.memberIds || []).filter((id: string) => id !== user.uid);
+          const updatedMembers = { ...groupData.members };
+          const updatedBalances = { ...groupData.balances };
+
+          delete updatedMembers[user.uid];
+          delete updatedBalances[user.uid];
+
+          groupBatch.update(groupDoc.ref, {
+            memberIds: updatedMemberIds,
+            members: updatedMembers,
+            balances: updatedBalances,
+            updatedAt: Timestamp.now(),
+          });
+        }
+
+        console.log("💾 Removendo de grupos...");
+        await groupBatch.commit();
+        console.log("✅ Removido de grupos com sucesso");
+      }
+
+      // 3. Deletar dados relacionados (batch separado)
+      const deleteBatch = writeBatch(db);
+
       // Deletar relações de amizade
+      console.log("🔍 Buscando relações de amizade...");
       const friendsRef = collection(db, "friends");
       const friendsQuery1 = query(friendsRef, where("userId", "==", user.uid));
       const friendsQuery2 = query(friendsRef, where("friendId", "==", user.uid));
@@ -73,14 +124,14 @@ export default function ProfileScreen({ navigation }: any) {
         getDocs(friendsQuery1),
         getDocs(friendsQuery2),
       ]);
-      
-      const batch = writeBatch(db);
-      
+
+      console.log(`✅ Encontradas ${friendsSnap1.size + friendsSnap2.size} relações de amizade`);
       [...friendsSnap1.docs, ...friendsSnap2.docs].forEach((doc) => {
-        batch.delete(doc.ref);
+        deleteBatch.delete(doc.ref);
       });
 
       // Deletar solicitações de amizade
+      console.log("🔍 Buscando solicitações de amizade...");
       const requestsRef = collection(db, "friendRequests");
       const requestsQuery1 = query(requestsRef, where("fromUserId", "==", user.uid));
       const requestsQuery2 = query(requestsRef, where("toUserId", "==", user.uid));
@@ -88,33 +139,59 @@ export default function ProfileScreen({ navigation }: any) {
         getDocs(requestsQuery1),
         getDocs(requestsQuery2),
       ]);
-      
+
+      console.log(`✅ Encontradas ${requestsSnap1.size + requestsSnap2.size} solicitações de amizade`);
       [...requestsSnap1.docs, ...requestsSnap2.docs].forEach((doc) => {
-        batch.delete(doc.ref);
+        deleteBatch.delete(doc.ref);
       });
 
       // Deletar notificações
+      console.log("🔍 Buscando notificações...");
       const notificationsRef = collection(db, "notifications");
       const notificationsQuery = query(notificationsRef, where("userId", "==", user.uid));
       const notificationsSnap = await getDocs(notificationsQuery);
+
+      console.log(`✅ Encontradas ${notificationsSnap.size} notificações`);
       notificationsSnap.docs.forEach((doc) => {
-        batch.delete(doc.ref);
+        deleteBatch.delete(doc.ref);
       });
 
-      await batch.commit();
-      await deleteDoc(userRef);
+      // Commit do batch de deleções
+      console.log("� Deletando dados relacionados...");
+      await deleteBatch.commit();
+      console.log("✅ Dados relacionados deletados com sucesso");
 
-      // Deletar conta do Firebase Auth
+      // 4. Deletar documento do usuário
+      console.log("🗑️ Deletando documento do usuário...");
+      const userRef = doc(db, "users", user.uid);
+      await deleteDoc(userRef);
+      console.log("✅ Documento do usuário deletado");
+
+      // 5. Deletar conta do Firebase Auth
+      console.log("� Deletando conta do Firebase Auth...");
       await deleteUserAccount(password);
-      
+
+      console.log("✅ Conta apagada com sucesso!");
       Alert.alert("Sucesso", "Conta apagada com sucesso");
       await logout();
     } catch (error: any) {
-      console.error("Erro ao apagar conta:", error);
-      Alert.alert(
-        "Erro",
-        error.message || "Não foi possível apagar a conta. Verifique sua senha."
-      );
+      console.error("❌ Erro ao apagar conta:", error);
+      console.error("❌ Código do erro:", error.code);
+      console.error("❌ Mensagem:", error.message);
+      console.error("❌ Stack:", error.stack);
+
+      // Mensagem de erro mais específica
+      let errorMessage = "Não foi possível apagar a conta.";
+
+      if (error.code === "permission-denied" || error.message?.includes("permissions")) {
+        errorMessage = "Erro de permissão. Verifique se você tem permissão para deletar todos os dados.";
+      } else if (error.code === "auth/wrong-password" || error.message?.includes("password")) {
+        errorMessage = "Senha incorreta. Verifique sua senha e tente novamente.";
+      } else if (error.code === "auth/requires-recent-login") {
+        errorMessage = "Por segurança, faça logout e login novamente antes de deletar a conta.";
+      }
+
+      Alert.alert("Erro", errorMessage);
     } finally {
       setShowPasswordModal(false);
     }
@@ -138,128 +215,128 @@ export default function ProfileScreen({ navigation }: any) {
   return (
     <SafeAreaView style={s.container} edges={['top']}>
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-      <View style={{ paddingHorizontal: 16 }}>
-        <Text style={s.title}>Configurações</Text>
-        <View style={s.divider} />
-      </View>
+        <View style={{ paddingHorizontal: 16 }}>
+          <Text style={s.title}>Configurações</Text>
+          <View style={s.divider} />
+        </View>
 
-      <Text style={s.sectionTitle}>Conta</Text>
-      <View style={s.card}>
-        <Row
-          icon={<Ionicons name="person-circle-outline" size={22} color={colors.textDark} />}
-          label="Editar perfil"
-          chevron
-          onPress={() => navigation.navigate("EditProfile")}
-        />
-        <Row
-          icon={<MaterialCommunityIcons name="account-outline" size={20} color={colors.textDark} />}
-          label="Nome"
-          value={user?.name || "Não definido"}
-        />
-        {user?.nickname && (
+        <Text style={s.sectionTitle}>Conta</Text>
+        <View style={s.card}>
           <Row
-            icon={<MaterialCommunityIcons name="at" size={20} color={colors.textDark} />}
-            label="Nickname"
-            value={user.nickname}
+            icon={<Ionicons name="person-circle-outline" size={22} color={colors.textDark} />}
+            label="Editar perfil"
+            chevron
+            onPress={() => navigation.navigate("EditProfile")}
           />
-        )}
-        <Row
-          icon={<MaterialCommunityIcons name="phone-outline" size={20} color={colors.textDark} />}
-          label="Telefone"
-          value={displayPhone(user?.phone)}
-        />
-        <Row
-          icon={<MaterialCommunityIcons name="email-outline" size={20} color={colors.textDark} />}
-          label="Email"
-          value={user?.email || ""}
-        />
-        <Row
-          icon={<MaterialCommunityIcons name="key-outline" size={20} color={colors.textDark} />}
-          label="Senha"
-          value={"••••••••"}
-          chevron
-          onPress={() => navigation.navigate("ChangePassword")}
-        />
-      </View>
-
-      <Text style={s.sectionTitle}>Configurações do app</Text>
-      <View style={s.card}>
-        <Row
-          icon={<MaterialCommunityIcons name="translate" size={20} color={colors.textDark} />}
-          label="Idioma"
-          value={LANGUAGE_NAMES[language] || "Português (Portugal)"}
-          chevron
-          onPress={() => {
-            Alert.alert(
-              "Idioma",
-              "Selecione um idioma:",
-              [
-                { text: "Cancelar", style: "cancel" },
-                {
-                  text: "Português",
-                  onPress: () => setLanguage("pt"),
-                },
-                {
-                  text: "English",
-                  onPress: () => setLanguage("en"),
-                },
-                {
-                  text: "Español",
-                  onPress: () => setLanguage("es"),
-                },
-                {
-                  text: "Français",
-                  onPress: () => setLanguage("fr"),
-                },
-              ]
-            );
-          }}
-        />
-        <Row
-          icon={<Ionicons name="notifications-outline" size={20} color={colors.textDark} />}
-          label="Notificações"
-          right={
-            <Switch
-              value={notif}
-              onValueChange={handleToggleNotifications}
-              disabled={saving}
-              thumbColor={notif ? "#fff" : undefined}
-              trackColor={{ true: "#34C759", false: "#e5e7eb" }}
+          <Row
+            icon={<MaterialCommunityIcons name="account-outline" size={20} color={colors.textDark} />}
+            label="Nome"
+            value={user?.name || "Não definido"}
+          />
+          {user?.nickname && (
+            <Row
+              icon={<MaterialCommunityIcons name="at" size={20} color={colors.textDark} />}
+              label="Nickname"
+              value={user.nickname}
             />
-          }
-        />
-      </View>
+          )}
+          <Row
+            icon={<MaterialCommunityIcons name="phone-outline" size={20} color={colors.textDark} />}
+            label="Telefone"
+            value={displayPhone(user?.phone)}
+          />
+          <Row
+            icon={<MaterialCommunityIcons name="email-outline" size={20} color={colors.textDark} />}
+            label="Email"
+            value={user?.email || ""}
+          />
+          <Row
+            icon={<MaterialCommunityIcons name="key-outline" size={20} color={colors.textDark} />}
+            label="Senha"
+            value={"••••••••"}
+            chevron
+            onPress={() => navigation.navigate("ChangePassword")}
+          />
+        </View>
 
-      <Text style={s.sectionTitle}>Geral</Text>
-      <View style={s.card}>
-        <Row
-          icon={<Ionicons name="log-out-outline" size={20} color={colors.textDark} />}
-          label="Sair"
-          chevron
-          onPress={async () => {
-            try {
-              await logout();
-            } catch (err) {
-              console.log("Erro ao sair:", err);
+        <Text style={s.sectionTitle}>Configurações do app</Text>
+        <View style={s.card}>
+          <Row
+            icon={<MaterialCommunityIcons name="translate" size={20} color={colors.textDark} />}
+            label="Idioma"
+            value={LANGUAGE_NAMES[language] || "Português (Portugal)"}
+            chevron
+            onPress={() => {
+              Alert.alert(
+                "Idioma",
+                "Selecione um idioma:",
+                [
+                  { text: "Cancelar", style: "cancel" },
+                  {
+                    text: "Português",
+                    onPress: () => setLanguage("pt"),
+                  },
+                  {
+                    text: "English",
+                    onPress: () => setLanguage("en"),
+                  },
+                  {
+                    text: "Español",
+                    onPress: () => setLanguage("es"),
+                  },
+                  {
+                    text: "Français",
+                    onPress: () => setLanguage("fr"),
+                  },
+                ]
+              );
+            }}
+          />
+          <Row
+            icon={<Ionicons name="notifications-outline" size={20} color={colors.textDark} />}
+            label="Notificações"
+            right={
+              <Switch
+                value={notif}
+                onValueChange={handleToggleNotifications}
+                disabled={saving}
+                thumbColor={notif ? "#fff" : undefined}
+                trackColor={{ true: "#34C759", false: "#e5e7eb" }}
+              />
             }
-          }}
-        />
-        <Row
-          icon={<Ionicons name="person-remove-outline" size={20} color={"#E11D48"} />}
-          label="Apagar conta"
-          labelStyle={{ color: "#E11D48", fontWeight: "700" }}
-          chevron
-          onPress={onRemove}
-        />
-      </View>
+          />
+        </View>
 
-      <PasswordModal
-        visible={showPasswordModal}
-        onClose={() => setShowPasswordModal(false)}
-        onConfirm={handleDeleteAccount}
-        title="Confirmar senha"
-        message="Digite sua senha para confirmar a exclusão da conta:"
-      />
+        <Text style={s.sectionTitle}>Geral</Text>
+        <View style={s.card}>
+          <Row
+            icon={<Ionicons name="log-out-outline" size={20} color={colors.textDark} />}
+            label="Sair"
+            chevron
+            onPress={async () => {
+              try {
+                await logout();
+              } catch (err) {
+                console.log("Erro ao sair:", err);
+              }
+            }}
+          />
+          <Row
+            icon={<Ionicons name="person-remove-outline" size={20} color={"#E11D48"} />}
+            label="Apagar conta"
+            labelStyle={{ color: "#E11D48", fontWeight: "700" }}
+            chevron
+            onPress={onRemove}
+          />
+        </View>
+
+        <PasswordModal
+          visible={showPasswordModal}
+          onClose={() => setShowPasswordModal(false)}
+          onConfirm={handleDeleteAccount}
+          title="Confirmar senha"
+          message="Digite sua senha para confirmar a exclusão da conta:"
+        />
       </ScrollView>
     </SafeAreaView>
   );

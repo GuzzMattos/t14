@@ -11,24 +11,26 @@ export type ExpenseDivision = {
   userId: string;
   amount: number;
   percentage?: number;
+  paid: boolean; // Se já foi pago
+  paidAt?: any; // Quando foi pago/confirmado
 };
 
 export type Expense = {
   id: string;
   groupId: string;
   createdBy: string; // userId de quem criou
-  
+
   description: string;
   amount: number;
   currency: string;
-  
+
   paidBy: string; // userId de quem pagou
-  
+
   divisionType: ExpenseDivisionType;
   divisions: ExpenseDivision[]; // Como a despesa foi dividida
-  
+
   status: ExpenseStatus;
-  
+
   // Metadados
   createdAt: any;
   updatedAt: any;
@@ -57,12 +59,19 @@ export async function createExpense(
   const expenseRef = doc(expensesRef);
   const now = Timestamp.now();
 
-  // Filtrar divisões para remover campos undefined
+  // Filtrar divisões para remover campos undefined e marcar como pago se for o criador
   const cleanDivisions = divisions.map(div => {
     const clean: ExpenseDivision = {
       userId: div.userId,
       amount: div.amount,
+      paid: div.userId === paidBy, // Marcar como pago se for quem pagou (criador)
     };
+
+    // Adicionar paidAt se já está pago
+    if (clean.paid) {
+      clean.paidAt = now;
+    }
+
     // Só adicionar percentage se não for undefined
     if (div.percentage !== undefined && div.percentage !== null) {
       clean.percentage = div.percentage;
@@ -218,7 +227,7 @@ export async function rejectExpense(
  */
 export async function getGroupExpenses(groupId: string): Promise<Expense[]> {
   const expensesRef = collection(db, "expenses");
-  
+
   try {
     const q = query(
       expensesRef,
@@ -261,7 +270,7 @@ export function observeGroupExpenses(
   callback: (expenses: Expense[]) => void
 ): () => void {
   const expensesRef = collection(db, "expenses");
-  
+
   // Query sem orderBy para evitar necessidade de índice composto
   const q = query(
     expensesRef,
@@ -273,14 +282,14 @@ export function observeGroupExpenses(
       id: doc.id,
       ...doc.data(),
     })) as Expense[];
-    
+
     // Ordenar em memória por data
     const sorted = expenses.sort((a, b) => {
       const aTime = a.createdAt?.toDate?.()?.getTime() || 0;
       const bTime = b.createdAt?.toDate?.()?.getTime() || 0;
       return bTime - aTime;
     });
-    
+
     callback(sorted);
   }, (error) => {
     console.error("Erro ao observar despesas:", error);
@@ -305,3 +314,83 @@ export async function getExpenseById(expenseId: string): Promise<Expense | null>
   } as Expense;
 }
 
+/**
+ * Calcula o total que o usuário pagou no mês
+ * Inclui: despesas criadas por ele (valor total) + pagamentos confirmados de suas partes
+ */
+export async function getTotalPaidByUserInMonth(userId: string, year: number, month: number): Promise<number> {
+  const startOfMonth = Timestamp.fromDate(new Date(year, month, 1));
+  const endOfMonth = Timestamp.fromDate(new Date(year, month + 1, 0, 23, 59, 59));
+
+  let total = 0;
+
+  // 1. Buscar despesas aprovadas onde o usuário é o paidBy (quem pagou tudo)
+  const paidByQuery = query(
+    collection(db, "expenses"),
+    where("paidBy", "==", userId),
+    where("status", "==", "APPROVED"),
+    where("createdAt", ">=", startOfMonth),
+    where("createdAt", "<=", endOfMonth)
+  );
+
+  const paidBySnap = await getDocs(paidByQuery);
+  paidBySnap.forEach(doc => {
+    const expense = doc.data() as Expense;
+    total += expense.amount;
+  });
+
+  // 2. Buscar despesas aprovadas onde o usuário tem uma divisão paga
+  const allExpensesQuery = query(
+    collection(db, "expenses"),
+    where("status", "==", "APPROVED"),
+    where("createdAt", ">=", startOfMonth),
+    where("createdAt", "<=", endOfMonth)
+  );
+
+  const allExpensesSnap = await getDocs(allExpensesQuery);
+  allExpensesSnap.forEach(doc => {
+    const expense = doc.data() as Expense;
+
+    // Pular se já contamos (usuário é paidBy)
+    if (expense.paidBy === userId) return;
+
+    // Verificar se tem divisão paga do usuário
+    const userDivision = expense.divisions?.find(d => d.userId === userId && d.paid);
+    if (userDivision) {
+      total += userDivision.amount;
+    }
+  });
+
+  return total;
+}
+
+/**
+ * Marca a divisão de um usuário como paga (quando o criador confirma o pagamento)
+ */
+export async function markDivisionAsPaid(expenseId: string, userId: string): Promise<void> {
+  const expenseRef = doc(db, "expenses", expenseId);
+  const expenseSnap = await getDoc(expenseRef);
+
+  if (!expenseSnap.exists()) {
+    throw new Error("Despesa não encontrada");
+  }
+
+  const expense = expenseSnap.data() as Expense;
+
+  // Atualizar a divisão do usuário para marcá-la como paga
+  const updatedDivisions = expense.divisions.map(div => {
+    if (div.userId === userId) {
+      return {
+        ...div,
+        paid: true,
+        paidAt: Timestamp.now(),
+      };
+    }
+    return div;
+  });
+
+  await updateDoc(expenseRef, {
+    divisions: updatedDivisions,
+    updatedAt: Timestamp.now(),
+  });
+}

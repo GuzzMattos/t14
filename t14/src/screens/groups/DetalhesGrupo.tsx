@@ -6,6 +6,7 @@ import colors from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import Tab from "@/components/Tab";
 import Input from "@/components/Input";
+import InputLupa from "@/components/InputLupa";
 import { useAuth } from "@/contexts/AuthContext";
 import { auth, db } from "@/firebase/config";
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
@@ -31,7 +32,7 @@ const DESPESA: DetalhesGrupo[] = [
 
 type DetalhesMovimentacao = {
   id: string,
-  pagou: string, 
+  pagou: string,
   recebeu: string,
   valor: number,
   data: Date,
@@ -45,15 +46,15 @@ const MOVIMENTACOES: DetalhesMovimentacao[] = [
 
 type Amigo = {
   id: string,
-  nome: string, 
+  nome: string,
   numero: string,
   admin: boolean,
 };
 
 const AMIGOS: Amigo[] = [
-  { id: "1", nome: "Carlos", numero: "11912345678", admin: true},
-  { id: "2", nome: "Maria", numero: "11987654321", admin: false},
-  { id: "3", nome: "João", numero: "11999999999", admin: false},
+  { id: "1", nome: "Carlos", numero: "11912345678", admin: true },
+  { id: "2", nome: "Maria", numero: "11987654321", admin: false },
+  { id: "3", nome: "João", numero: "11999999999", admin: false },
 ];
 
 const abas = ["Despesas", "Membros", "Saldos"];
@@ -63,12 +64,15 @@ export default function DetalhesGrupo({ route, navigation }: any) {
   const { user } = useAuth();
   const [abaAtiva, setAbaAtiva] = useState("Despesas");
   const [pesquisarAmigo, setPesquisarAmigo] = useState<string>();
+  const [pesquisarDespesa, setPesquisarDespesa] = useState<string>(""); // Filtro de despesas
+  const [pesquisarSaldo, setPesquisarSaldo] = useState<string>(""); // Filtro de saldos
   const [selecionados, setSelecionados] = useState<string[]>([]);
   const [group, setGroup] = useState<Group | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [friends, setFriends] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [memberNames, setMemberNames] = useState<{ [key: string]: string }>({});
 
   // Carregar dados do grupo
   useEffect(() => {
@@ -83,17 +87,21 @@ export default function DetalhesGrupo({ route, navigation }: any) {
         // Carregar dados dos membros
         if (groupData.memberIds) {
           const membersData = [];
+          const namesMap: { [key: string]: string } = {};
           for (const memberId of groupData.memberIds) {
             const memberUser = await getUserFromFirestore(memberId);
             if (memberUser) {
+              const memberName = memberUser.name || memberUser.email?.split('@')[0] || "Usuário";
               membersData.push({
                 id: memberId,
-                nome: memberUser.name || "Usuário",
+                nome: memberName,
                 admin: memberId === groupData.ownerId,
               });
+              namesMap[memberId] = memberName;
             }
           }
           setMembers(membersData);
+          setMemberNames(namesMap);
         }
 
         setLoading(false);
@@ -147,7 +155,7 @@ export default function DetalhesGrupo({ route, navigation }: any) {
 
   // Obter IDs dos membros já no grupo
   const memberIds = group?.memberIds || [];
-  
+
   // Filtrar amigos que já estão no grupo e aplicar filtro de pesquisa
   const amigosFiltrados = friends
     .filter(amigo => !memberIds.includes(amigo.id)) // Excluir amigos que já estão no grupo
@@ -200,6 +208,32 @@ export default function DetalhesGrupo({ route, navigation }: any) {
     if (!user || !group) return 0;
     return group.balances?.[user.uid] || 0;
   };
+
+  // Filtrar despesas por descrição ou pagador
+  const despesasFiltradas = expenses.filter(exp => {
+    if (!pesquisarDespesa) return true;
+    const searchLower = removerAcentos(pesquisarDespesa);
+    const descLower = removerAcentos(exp.description || "");
+    return descLower.includes(searchLower);
+  });
+
+  // Calcular movimentações (saldos) com base nos membros
+  const movimentacoes = members
+    .filter(m => m.id !== user?.uid) // Excluir o próprio usuário
+    .map(m => {
+      const balance = group?.balances?.[m.id] || 0;
+      return {
+        id: m.id,
+        nome: m.nome,
+        saldo: balance,
+      };
+    })
+    .filter(m => {
+      if (!pesquisarSaldo) return true;
+      const searchLower = removerAcentos(pesquisarSaldo);
+      const nameLower = removerAcentos(m.nome);
+      return nameLower.includes(searchLower);
+    });
 
   if (loading) {
     return (
@@ -262,15 +296,26 @@ export default function DetalhesGrupo({ route, navigation }: any) {
             </View>
           </View>
 
+          {/* Filtro de busca */}
+          <View style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
+            <InputLupa
+              placeholder="Buscar despesa..."
+              value={pesquisarDespesa}
+              onChangeText={setPesquisarDespesa}
+            />
+          </View>
+
           <FlatList
-            data={expenses}
+            data={despesasFiltradas}
             keyExtractor={(i) => i.id}
             contentContainerStyle={{ paddingBottom: 16 }}
             renderItem={({ item }) => <Item item={item} navigation={navigation} group={group} />}
             ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
             ListEmptyComponent={
               <View style={{ padding: 20, alignItems: "center" }}>
-                <Text style={{ color: colors.label }}>Nenhuma despesa aprovada ainda</Text>
+                <Text style={{ color: colors.label }}>
+                  {pesquisarDespesa ? "Nenhuma despesa encontrada" : "Nenhuma despesa aprovada ainda"}
+                </Text>
               </View>
             }
           />
@@ -281,14 +326,14 @@ export default function DetalhesGrupo({ route, navigation }: any) {
               onPress={() => navigation.navigate("DespesaForm", { grupoId })}
               style={s.botao}
             />
-            <Button 
-              title="Liquidar conta" 
+            <Button
+              title="Liquidar conta"
               onPress={() => {
                 const totalDespesas = calcularTotalDespesas();
                 navigation.navigate("Pagamento", { tipoPagamento: "total", valorDivida: totalDespesas });
-              }} 
-              variant="outline" 
-              style={s.botao} 
+              }}
+              variant="outline"
+              style={s.botao}
             />
           </View>
           <TouchableOpacity>
@@ -300,7 +345,7 @@ export default function DetalhesGrupo({ route, navigation }: any) {
       {abaAtiva === "Membros" && (
         <View style={{ padding: 16 }}>
           <View>
-            <Text style={[s.activitySub, {margin: 10}]}>Membros</Text>
+            <Text style={[s.activitySub, { margin: 10 }]}>Membros</Text>
             <FlatList
               data={[...members].sort((a, b) => a.nome.localeCompare(b.nome))}
               horizontal
@@ -318,7 +363,7 @@ export default function DetalhesGrupo({ route, navigation }: any) {
           </View>
 
           <View>
-            <Text style={[s.activitySub, {margin: 10}]}>Adicionar amigo ao grupo</Text>
+            <Text style={[s.activitySub, { margin: 10 }]}>Adicionar amigo ao grupo</Text>
             <Input
               placeholder="Pesquisar amigos"
               value={pesquisarAmigo}
@@ -331,25 +376,25 @@ export default function DetalhesGrupo({ route, navigation }: any) {
               data={[...amigosFiltrados].sort((a, b) => a.nome.localeCompare(b.nome))}
               contentContainerStyle={{ paddingBottom: 16 }}
               renderItem={({ item }) =>
-                  <ListaAmigos 
-                    amigo={item} 
-                    selecionado={selecionados.includes(item.id)} 
-                    onPress={() => {
-                      if (selecionados.includes(item.id)) {
-                        setSelecionados(prev => prev.filter(id => id !== item.id));
-                      } else {
-                        setSelecionados(prev => [...prev, item.id]);
-                      }
-                    }}
-                  />}
-                ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+                <ListaAmigos
+                  amigo={item}
+                  selecionado={selecionados.includes(item.id)}
+                  onPress={() => {
+                    if (selecionados.includes(item.id)) {
+                      setSelecionados(prev => prev.filter(id => id !== item.id));
+                    } else {
+                      setSelecionados(prev => [...prev, item.id]);
+                    }
+                  }}
+                />}
+              ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
             />
           </View>
           {selecionados.length > 0 && (
-            <Button 
-              title={`Adicionar ${selecionados.length} amigo(s)`} 
-              onPress={adicionarSelecionados} 
-              style={{ marginTop: 16 }} 
+            <Button
+              title={`Adicionar ${selecionados.length} amigo(s)`}
+              onPress={adicionarSelecionados}
+              style={{ marginTop: 16 }}
             />
           )}
         </View>
@@ -357,24 +402,44 @@ export default function DetalhesGrupo({ route, navigation }: any) {
 
       {abaAtiva === "Saldos" && (
         <View style={{ padding: 16 }}>
-          <View style={[s.metricCard, { marginRight: 12 }]}>
+          {/* Card mostrando quanto o usuário deve pagar */}
+          <View style={[s.metricCard, { marginBottom: 20 }]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingBottom: 35 }}>
               <View>
-                <Text style={s.metricValue}>João</Text>
-                <Text style={s.metricLabel}>A pagar</Text>
+                <Text style={s.metricValue}>{memberNames[user?.uid || ""] || user?.name || "Você"}</Text>
+                <Text style={s.metricLabel}>
+                  {calcularMeuSaldo() < 0 ? "A pagar" : calcularMeuSaldo() > 0 ? "A receber" : "Sem dívidas"}
+                </Text>
               </View>
-                <Text style={s.metricValue}>300€</Text>
+              <Text style={[s.metricValue, { color: calcularMeuSaldo() >= 0 ? "#2E7D32" : "#E11D48" }]}>
+                {Math.abs(calcularMeuSaldo()).toFixed(2)}€
+              </Text>
             </View>
           </View>
 
-          <Text style={[s.activitySub, {margin: 10}]}>Movimentações</Text>
+          <Text style={[s.activitySub, { margin: 10 }]}>Saldos dos membros</Text>
+
+          {/* Filtro de busca */}
+          <InputLupa
+            placeholder="Buscar membro..."
+            value={pesquisarSaldo}
+            onChangeText={setPesquisarSaldo}
+            style={{ marginBottom: 12 }}
+          />
 
           <FlatList
-            data={MOVIMENTACOES}
+            data={movimentacoes}
             keyExtractor={(i) => i.id}
             contentContainerStyle={{ paddingBottom: 16 }}
-            renderItem={({ item }) => <Movimentacao item={item} />}
+            renderItem={({ item }) => <SaldoItem item={item} />}
             ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+            ListEmptyComponent={
+              <View style={{ padding: 20, alignItems: "center" }}>
+                <Text style={{ color: colors.label }}>
+                  {pesquisarSaldo ? "Nenhum membro encontrado" : "Nenhum membro no grupo"}
+                </Text>
+              </View>
+            }
           />
         </View>
       )}
@@ -383,8 +448,31 @@ export default function DetalhesGrupo({ route, navigation }: any) {
 }
 
 function Item({ item, navigation, group }: { item: Expense; navigation: any; group: Group | null }) {
-  const paidByName = group?.members?.[item.paidBy] ? "Usuário" : "Desconhecido";
-  
+  const [paidByName, setPaidByName] = React.useState<string>("Carregando...");
+
+  React.useEffect(() => {
+    const loadPaidByName = async () => {
+      if (!item.paidBy) {
+        setPaidByName("Desconhecido");
+        return;
+      }
+
+      try {
+        const paidByUser = await getUserFromFirestore(item.paidBy);
+        if (paidByUser) {
+          setPaidByName(paidByUser.name || paidByUser.email?.split('@')[0] || "Usuário");
+        } else {
+          setPaidByName("Desconhecido");
+        }
+      } catch (error) {
+        console.error("Erro ao carregar nome do pagador:", error);
+        setPaidByName("Desconhecido");
+      }
+    };
+
+    loadPaidByName();
+  }, [item.paidBy]);
+
   return (
     <TouchableOpacity
       activeOpacity={0.8}
@@ -427,7 +515,7 @@ type ListaAmigosProps = {
 function ListaAmigos({ amigo, selecionado, onPress }: ListaAmigosProps) {
   return (
     <TouchableOpacity onPress={onPress}>
-      <View style={[s.activityCard, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}]}>
+      <View style={[s.activityCard, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
         <View>
           <Text style={s.activityTitle}>{amigo.nome}</Text>
           <Text style={s.activitySub}>{amigo.numero}</Text>
@@ -439,7 +527,7 @@ function ListaAmigos({ amigo, selecionado, onPress }: ListaAmigosProps) {
             size={20}
             color={selecionado ? "#334B34" : "#999"}
             style={{ marginRight: 8 }}
-            />
+          />
         </View>
       </View>
     </TouchableOpacity>
@@ -458,7 +546,7 @@ function ListaMembros({
   onRemove: (memberId: string, memberName: string) => void;
 }) {
   const canRemove = !amigo.admin && currentUserId;
-  
+
   return (
     <View style={s.listaMembros}>
       {canRemove && (
@@ -472,6 +560,23 @@ function ListaMembros({
       <View>
         <Text style={s.activitySub}>{amigo.nome}{amigo.admin ? " (admin)" : ""}</Text>
       </View>
+    </View>
+  );
+}
+
+function SaldoItem({ item }: { item: { id: string; nome: string; saldo: number } }) {
+  return (
+    <View style={s.activityCard}>
+      <View style={s.avatar} />
+      <View style={{ flex: 1 }}>
+        <Text style={s.activityTitle}>{item.nome}</Text>
+        <Text style={s.activitySub}>
+          {item.saldo < 0 ? "Deve" : item.saldo > 0 ? "Recebe" : "Sem dívidas"}
+        </Text>
+      </View>
+      <Text style={[s.metricValue, { fontSize: 18, color: item.saldo >= 0 ? "#2E7D32" : "#E11D48" }]}>
+        {item.saldo >= 0 ? "+" : ""}{item.saldo.toFixed(2)}€
+      </Text>
     </View>
   );
 }
@@ -577,10 +682,11 @@ const s = StyleSheet.create({
     marginTop: 8,
     marginBottom: 15,
   },
-  input: { 
-    borderColor: colors.border, 
-    borderRadius: 14, 
-    backgroundColor: colors.background },
+  input: {
+    borderColor: colors.border,
+    borderRadius: 14,
+    backgroundColor: colors.background
+  },
   listaMembros: {
     backgroundColor: "#F5EEDC",
     borderRadius: 20,
@@ -599,5 +705,5 @@ const s = StyleSheet.create({
     padding: 4,
     backgroundColor: "red",
     borderRadius: 25,
-},
+  },
 });

@@ -48,6 +48,10 @@ export async function createGroupInFirestore({
     const ref = collection(db, "group");
     const docRef = await addDoc(ref, groupData);
 
+    // Criar notificação de atividade (grupo criado)
+    const { createGroupCreatedNotification } = await import("./notification");
+    await createGroupCreatedNotification(ownerId, docRef.id, name);
+
     return docRef.id;
 }
 
@@ -91,7 +95,7 @@ export async function removeMemberFromGroup(
     // Remover dos membros e balances
     const updatedMembers = { ...groupData.members };
     const updatedBalances = { ...groupData.balances };
-    
+
     delete updatedMembers[memberId];
     delete updatedBalances[memberId];
 
@@ -163,6 +167,23 @@ export async function addMembersToGroup(
         updatedAt: now,
         lastActivityAt: now,
     });
+
+    // Criar notificação de atividade para cada novo membro
+    const { createMemberAddedNotification } = await import("./notification");
+    const { getUserFromFirestore } = await import("@/services/user");
+
+    const currentUser = await getUserFromFirestore(currentUserId);
+    const currentUserName = currentUser?.name || "Alguém";
+    const groupName = groupData.name || "Grupo";
+
+    for (const memberId of newMemberIds) {
+        await createMemberAddedNotification(
+            memberId,
+            groupId,
+            groupName,
+            currentUserName
+        );
+    }
 }
 
 /**

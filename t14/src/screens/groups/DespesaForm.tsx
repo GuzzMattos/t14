@@ -21,7 +21,7 @@ type Pessoa = {
 export default function DespesaForm({ route, navigation }: any) {
   const { modo, despesa, grupoId } = route.params || {};
   const { user } = useAuth();
-  
+
   const [descricao, setDescricao] = useState<string>("");
   const [valorTotal, setValorTotal] = useState<string>("");
   const [pagador, setPagador] = useState<string>("");
@@ -103,7 +103,7 @@ export default function DespesaForm({ route, navigation }: any) {
     try {
       // Preparar divisões
       const divisions: ExpenseDivision[] = [];
-      
+
       if (abaTipo === "Igual") {
         // Divisão igual: cada membro paga o mesmo valor
         const valorPorPessoa = valorTotalNum / valoresIndividuais.length;
@@ -111,6 +111,7 @@ export default function DespesaForm({ route, navigation }: any) {
           divisions.push({
             userId: pessoa.userId,
             amount: valorPorPessoa,
+            paid: false, // Será marcado como true para o criador automaticamente
           });
         });
       } else {
@@ -131,6 +132,7 @@ export default function DespesaForm({ route, navigation }: any) {
             const division: ExpenseDivision = {
               userId: pessoa.userId,
               amount,
+              paid: false, // Será marcado como true para o criador automaticamente
             };
             // Só adicionar percentage se não for undefined
             if (percentage !== undefined && percentage !== null) {
@@ -142,23 +144,23 @@ export default function DespesaForm({ route, navigation }: any) {
       }
 
       // Determinar tipo de divisão
-      const divisionType: ExpenseDivisionType = 
-        abaTipo === "Igual" 
-          ? "EQUAL" 
-          : abaDiferente === "Porcentagem" 
-          ? "PERCENTAGE" 
-          : "CUSTOM";
+      const divisionType: ExpenseDivisionType =
+        abaTipo === "Igual"
+          ? "EQUAL"
+          : abaDiferente === "Porcentagem"
+            ? "PERCENTAGE"
+            : "CUSTOM";
 
       // Criar despesa
       await createExpense(
-        grupoId,
+        grupoId || "",
         user.uid,
         descricao.trim(),
         valorTotalNum,
         pagadorId,
         divisionType,
         divisions,
-        group.ownerId,
+        group.ownerId || user.uid,
         pagador
       );
 
@@ -184,7 +186,7 @@ export default function DespesaForm({ route, navigation }: any) {
       try {
         const groupRef = doc(db, "group", grupoId);
         const groupSnap = await getDoc(groupRef);
-        
+
         if (groupSnap.exists()) {
           const groupData = { id: groupSnap.id, ...groupSnap.data() } as Group;
           setGroup(groupData);
@@ -272,13 +274,13 @@ export default function DespesaForm({ route, navigation }: any) {
           onChangeText={(text) => {
             // Limpar caracteres não numéricos exceto vírgula e ponto
             const cleaned = text.replace(/[^\d,.]/g, '');
-            
+
             if (abaDiferente === "Valor") {
               // Modo Valor: validar soma dos valores
               const novoValor = parseFloat(cleaned.replace(",", ".")) || 0;
               const totalPermitido = parseFloat(valorTotal?.replace(",", ".") || "0");
               const somaAtual = somaDivisoes() - (parseFloat(item.valor?.replace(",", ".") || "0") || 0);
-              
+
               if (somaAtual + novoValor <= totalPermitido) {
                 setValoresIndividuais((prev) =>
                   prev.map((p) => (p.id === item.id ? { ...p, valor: cleaned } : p))
@@ -287,14 +289,14 @@ export default function DespesaForm({ route, navigation }: any) {
             } else {
               // Modo Porcentagem: validar soma das porcentagens (deve somar até 100%)
               const novoValor = parseFloat(cleaned.replace(",", ".")) || 0;
-              
+
               // Limitar porcentagem individual a 100%
               if (novoValor <= 100) {
                 const somaAtual = valoresIndividuais.reduce((total, p) => {
                   const val = parseFloat(p.valor?.replace(",", ".") || "0") || 0;
                   return total + (p.id === item.id ? 0 : val);
                 }, 0);
-                
+
                 // Permitir se a soma não exceder 100%
                 if (somaAtual + novoValor <= 100) {
                   setValoresIndividuais((prev) =>
@@ -346,136 +348,136 @@ export default function DespesaForm({ route, navigation }: any) {
         contentContainerStyle={s.container}
         keyboardShouldPersistTaps="handled"
       >
-      <Input
-        label="Descrição"
-        placeholder="ex: Almoço"
-        value={descricao}
-        onChangeText={setDescricao}
-        style={s.input}
-      />
-      <Input
-        label="Valor total (€)"
-        placeholder="ex: 60"
-        value={valorTotal}
-        onChangeText={setValorTotal}
-        style={s.input}
-      />
-      <View style={{ marginBottom: 12 }}>
-        <Text style={{ marginBottom: 8, color: colors.textDark, fontWeight: "600" }}>Quem pagou</Text>
-        {valoresIndividuais.map((pessoa) => (
-          <TouchableOpacity
-            key={pessoa.id}
-            onPress={() => {
-              setPagador(pessoa.nome);
-              setPagadorId(pessoa.userId);
-            }}
-            style={[
-              s.pessoaOption,
-              pagadorId === pessoa.userId && s.pessoaOptionSelected,
-            ]}
-          >
-            <Text style={[
-              s.pessoaOptionText,
-              pagadorId === pessoa.userId && s.pessoaOptionTextSelected,
-            ]}>
-              {pessoa.nome}
-            </Text>
-            {pagadorId === pessoa.userId && (
-              <Text style={s.checkmark}>✓</Text>
-            )}
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Tab abas={["Igual", "Diferente"]} abaAtiva={abaTipo} onChange={setAbaTipo} />
-
-      {abaTipo === "Igual" && (
-        <View style={{ marginTop: 12 }}>
-          {valoresIndividuais.map((p) => {
-            const item = {
-              ...p,
-              valor: valorTotal
-                ? (parseFloat(valorTotal.replace(",", ".")) / valoresIndividuais.length).toFixed(2) + "€"
-                : "0€",
-            };
-            return <View key={item.id}>{renderPessoaIgual({ item })}</View>;
-          })}
-        </View>
-      )}
-
-      {abaTipo === "Diferente" && (
-        <View style={{ marginTop: 12 }}>
-          <Tab
-            abas={["Valor", "Porcentagem"]}
-            abaAtiva={abaDiferente}
-            onChange={setAbaDiferente}
-          />
-          <View style={{ marginTop: 12 }}>
-            {valoresIndividuais.map((item) => (
-              <View key={item.id}>{renderPessoaDiferente({ item })}</View>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {abaTipo === "Diferente" && (
-        <View style={{ marginTop: 12 }}>
-          {abaDiferente === "Porcentagem" ? (
-            <Text style={{ fontWeight: "600", color: "#6B7280" }}>
-              {(() => {
-                const somaPerc = valoresIndividuais.reduce((total, p) => {
-                  const perc = parseFloat(p.valor?.replace(",", ".") || "0");
-                  return total + perc;
-                }, 0);
-                const restantePerc = 100 - somaPerc;
-                if (restantePerc > 0) {
-                  return `Falta distribuir: ${restantePerc.toFixed(1)}%`;
-                } else if (restantePerc < 0) {
-                  return `Excedeu em ${Math.abs(restantePerc).toFixed(1)}%`;
-                } else {
-                  return "Distribuição completa (100%)";
-                }
-              })()}
-            </Text>
-          ) : (
-            <Text style={{ fontWeight: "600", color: restante < 0 ? "red" : "#6B7280" }}>
-              {restante >= 0 
-                ? `Falta distribuir: ${restante.toFixed(2)}€` 
-                : `Excedeu o valor em ${Math.abs(restante).toFixed(2)}€`}
-            </Text>
-          )}
-        </View>
-      )}
-
-      <Button
-        title={saving ? "Salvando..." : modo === "editar" ? "Salvar alterações" : "Adicionar despesa"}
-        style={{ marginTop: 16 }}
-        onPress={handleSave}
-        disabled={saving || loading}
-      />
-
-      {modo === "editar" && (
-        <Button
-          title="Excluir despesa"
-          style={s.botaoApagar}
-          onPress={() => {
-            Alert.alert(
-              "Excluir despesa",
-              "Tem certeza que deseja excluir esta despesa?",
-              [
-                { text: "Cancelar", style: "cancel" },
-                {
-                  text: "Excluir",
-                  style: "destructive",
-                  onPress: () => {
-                    Alert.alert("Sucesso", "Despesa excluída com sucesso!");
-                  },
-                },
-              ]
-            );
-          }}
+        <Input
+          label="Descrição"
+          placeholder="ex: Almoço"
+          value={descricao}
+          onChangeText={setDescricao}
+          style={s.input}
         />
-      )}
+        <Input
+          label="Valor total (€)"
+          placeholder="ex: 60"
+          value={valorTotal}
+          onChangeText={setValorTotal}
+          style={s.input}
+        />
+        <View style={{ marginBottom: 12 }}>
+          <Text style={{ marginBottom: 8, color: colors.textDark, fontWeight: "600" }}>Quem pagou</Text>
+          {valoresIndividuais.map((pessoa) => (
+            <TouchableOpacity
+              key={pessoa.id}
+              onPress={() => {
+                setPagador(pessoa.nome);
+                setPagadorId(pessoa.userId);
+              }}
+              style={[
+                s.pessoaOption,
+                pagadorId === pessoa.userId && s.pessoaOptionSelected,
+              ]}
+            >
+              <Text style={[
+                s.pessoaOptionText,
+                pagadorId === pessoa.userId && s.pessoaOptionTextSelected,
+              ]}>
+                {pessoa.nome}
+              </Text>
+              {pagadorId === pessoa.userId && (
+                <Text style={s.checkmark}>✓</Text>
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Tab abas={["Igual", "Diferente"]} abaAtiva={abaTipo} onChange={setAbaTipo} />
+
+        {abaTipo === "Igual" && (
+          <View style={{ marginTop: 12 }}>
+            {valoresIndividuais.map((p) => {
+              const item = {
+                ...p,
+                valor: valorTotal
+                  ? (parseFloat(valorTotal.replace(",", ".")) / valoresIndividuais.length).toFixed(2) + "€"
+                  : "0€",
+              };
+              return <View key={item.id}>{renderPessoaIgual({ item })}</View>;
+            })}
+          </View>
+        )}
+
+        {abaTipo === "Diferente" && (
+          <View style={{ marginTop: 12 }}>
+            <Tab
+              abas={["Valor", "Porcentagem"]}
+              abaAtiva={abaDiferente}
+              onChange={setAbaDiferente}
+            />
+            <View style={{ marginTop: 12 }}>
+              {valoresIndividuais.map((item) => (
+                <View key={item.id}>{renderPessoaDiferente({ item })}</View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {abaTipo === "Diferente" && (
+          <View style={{ marginTop: 12 }}>
+            {abaDiferente === "Porcentagem" ? (
+              <Text style={{ fontWeight: "600", color: "#6B7280" }}>
+                {(() => {
+                  const somaPerc = valoresIndividuais.reduce((total, p) => {
+                    const perc = parseFloat(p.valor?.replace(",", ".") || "0");
+                    return total + perc;
+                  }, 0);
+                  const restantePerc = 100 - somaPerc;
+                  if (restantePerc > 0) {
+                    return `Falta distribuir: ${restantePerc.toFixed(1)}%`;
+                  } else if (restantePerc < 0) {
+                    return `Excedeu em ${Math.abs(restantePerc).toFixed(1)}%`;
+                  } else {
+                    return "Distribuição completa (100%)";
+                  }
+                })()}
+              </Text>
+            ) : (
+              <Text style={{ fontWeight: "600", color: restante < 0 ? "red" : "#6B7280" }}>
+                {restante >= 0
+                  ? `Falta distribuir: ${restante.toFixed(2)}€`
+                  : `Excedeu o valor em ${Math.abs(restante).toFixed(2)}€`}
+              </Text>
+            )}
+          </View>
+        )}
+
+        <Button
+          title={saving ? "Salvando..." : modo === "editar" ? "Salvar alterações" : "Adicionar despesa"}
+          style={{ marginTop: 16 }}
+          onPress={handleSave}
+          disabled={saving || loading}
+        />
+
+        {modo === "editar" && (
+          <Button
+            title="Excluir despesa"
+            style={s.botaoApagar}
+            onPress={() => {
+              Alert.alert(
+                "Excluir despesa",
+                "Tem certeza que deseja excluir esta despesa?",
+                [
+                  { text: "Cancelar", style: "cancel" },
+                  {
+                    text: "Excluir",
+                    style: "destructive",
+                    onPress: () => {
+                      Alert.alert("Sucesso", "Despesa excluída com sucesso!");
+                    },
+                  },
+                ]
+              );
+            }}
+          />
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -15,10 +15,12 @@ import { auth, db } from "@/firebase/config";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { Group } from "@/types/Group";
 import { observeUserNotifications, Notification } from "@/firebase/notification";
+import { getTotalPaidByUserInMonth } from "@/firebase/expense";
 
 type Activity = {
   id: string;
   title: string;
+  message?: string;
   group: string;
   time: string;
 };
@@ -43,6 +45,28 @@ export default function HomeScreen() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalDespesasMes, setTotalDespesasMes] = useState(0);
+
+  // Calcular total pago no mês
+  useEffect(() => {
+    async function fetchTotalMes() {
+      if (!user) return;
+
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth(); // 0-11
+
+      try {
+        const total = await getTotalPaidByUserInMonth(user.uid, year, month);
+        setTotalDespesasMes(total);
+      } catch (error) {
+        console.error("Erro ao calcular total do mês:", error);
+        setTotalDespesasMes(0);
+      }
+    }
+
+    fetchTotalMes();
+  }, [user]);
 
   // Carregar grupos do usuário
   useEffect(() => {
@@ -68,13 +92,18 @@ export default function HomeScreen() {
     return unsubscribe;
   }, [user]);
 
-  // Carregar notificações recentes
+  // Carregar notificações recentes (apenas atividades de grupos)
   useEffect(() => {
     if (!user) return;
 
     const unsubscribe = observeUserNotifications(user.uid, (notifs) => {
+      // Filtrar apenas notificações de grupos: MEMBER_ADDED e GROUP_CREATED
+      const groupActivities = notifs.filter(
+        (n) => n.type === "MEMBER_ADDED" || n.type === "GROUP_CREATED"
+      );
+
       // Pegar as 5 mais recentes
-      const recent = notifs
+      const recent = groupActivities
         .sort((a, b) => {
           const aTime = a.createdAt?.toDate?.()?.getTime() || 0;
           const bTime = b.createdAt?.toDate?.()?.getTime() || 0;
@@ -90,7 +119,7 @@ export default function HomeScreen() {
   const calcularTotalMes = () => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
+
     return groups.reduce((total, group) => {
       // Somar apenas despesas aprovadas do mês atual
       // Por enquanto, usar totalGasto do grupo
@@ -108,7 +137,7 @@ export default function HomeScreen() {
 
   const formatTime = (timestamp: any) => {
     if (!timestamp) return "Agora";
-    
+
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -120,7 +149,7 @@ export default function HomeScreen() {
     if (diffMins < 60) return `Há ${diffMins} min`;
     if (diffHours < 24) return `Há ${diffHours}h`;
     if (diffDays < 7) return `Há ${diffDays} dias`;
-    
+
     return date.toLocaleDateString("pt-PT");
   };
 
@@ -132,42 +161,44 @@ export default function HomeScreen() {
     );
   }
 
-  const activities = notifications.map((notif) => ({
-    id: notif.id,
-    title: notif.title,
-    group: notif.groupName || "Sistema",
-    time: formatTime(notif.createdAt),
-  }));
+  // Mapear notificações para atividades, incluindo nome do grupo
+  const activities = notifications.map((notif) => {
+    // Encontrar o grupo relacionado à notificação
+    const group = notif.groupId ? groups.find(g => g.id === notif.groupId) : null;
+    const groupName = group?.name || "Grupo";
+
+    return {
+      id: notif.id,
+      title: notif.title,
+      message: notif.message,
+      group: groupName,
+      time: formatTime(notif.createdAt),
+    };
+  });
 
   return (
     <SafeAreaView style={s.container} edges={['top']}>
       <View style={{ flex: 1 }}>
-      <View style={s.cardsRow}>
-        <View style={[s.metricCard, { marginRight: 12 }]}>
-          <Text style={s.metricLabel}>Total do mês</Text>
-          <Text style={s.metricValue}>{calcularTotalMes().toFixed(2)}€</Text>
-        </View>
-        <View style={s.metricCard}>
-          <Text style={s.metricLabel}>Seu saldo</Text>
-          <Text style={[s.metricValue, { color: calcularSaldoTotal() >= 0 ? "#2E7D32" : "#E11D48" }]}>
-            {calcularSaldoTotal() >= 0 ? "+" : ""}{calcularSaldoTotal().toFixed(2)}€
-          </Text>
-        </View>
-      </View>
-
-      <Text style={s.sectionTitle}>Atividade recente</Text>
-      <FlatList
-        data={activities}
-        keyExtractor={(i) => i.id}
-        contentContainerStyle={{ paddingBottom: 16 }}
-        renderItem={({ item }) => <ActivityItem item={item} />}
-        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-        ListEmptyComponent={
-          <View style={{ padding: 20, alignItems: "center" }}>
-            <Text style={{ color: colors.label }}>Nenhuma atividade recente</Text>
+        <View style={s.cardsRow}>
+          <View style={[s.metricCard, { marginRight: 12 }]}>
+            <Text style={s.metricLabel}>Despesas no mês</Text>
+            <Text style={s.metricValue}>{totalDespesasMes.toFixed(2)}€</Text>
           </View>
-        }
-      />
+        </View>
+
+        <Text style={s.sectionTitle}>Atividade recente</Text>
+        <FlatList
+          data={activities}
+          keyExtractor={(i) => i.id}
+          contentContainerStyle={{ paddingBottom: 16 }}
+          renderItem={({ item }) => <ActivityItem item={item} />}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+          ListEmptyComponent={
+            <View style={{ padding: 20, alignItems: "center" }}>
+              <Text style={{ color: colors.label }}>Nenhuma atividade recente</Text>
+            </View>
+          }
+        />
       </View>
     </SafeAreaView>
   );
@@ -176,19 +207,24 @@ export default function HomeScreen() {
 function ActivityItem({ item }: { item: Activity }) {
   return (
     <TouchableOpacity activeOpacity={0.8} style={s.activityCard}>
-      {/* Avatar quadrado bege */}
-      <View style={s.avatar} />
+      {/* Avatar com ícone de grupo */}
+      <View style={s.avatar}>
+        <Ionicons name="people-outline" size={20} color={colors.textDark} />
+      </View>
 
       {/* Texto */}
       <View style={{ flex: 1 }}>
         <Text style={s.activityTitle}>{item.title}</Text>
+        {item.message && (
+          <Text style={s.activityBody}>{item.message}</Text>
+        )}
         <Text style={s.activitySub}>
           {item.group} • {item.time}
         </Text>
       </View>
 
       {/* Ação*/}
-      <Ionicons name="create-outline" size={18} color={colors.primary} />
+      <Ionicons name="arrow-forward" size={18} color={colors.label} />
     </TouchableOpacity>
   );
 }
@@ -253,11 +289,19 @@ const s = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: "#F2EAD9",
     marginRight: 12,
+    justifyContent: "center",
+    alignItems: "center",
   },
   activityTitle: {
     fontSize: 16,
     fontWeight: "800",
     color: colors.textDark,
+  },
+  activityBody: {
+    fontSize: 14,
+    color: colors.textDark,
+    marginTop: 2,
+    marginBottom: 4,
   },
   activitySub: {
     color: "#6B7280",

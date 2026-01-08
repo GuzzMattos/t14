@@ -17,6 +17,7 @@ import {
   markNotificationAsRead,
   getUserNotifications,
   deleteNotification,
+  archiveNotification,
   Notification,
 } from "@/firebase/notification";
 import { approveExpense, rejectExpense } from "@/firebase/expense";
@@ -52,11 +53,11 @@ export default function Notificacoes() {
     try {
       if (approve) {
         await approveExpense(notification.expenseId, user.uid, notification.groupId);
-        await deleteNotification(notification.id, user.uid);
+        await archiveNotification(notification.id); // Arquivar ao invés de deletar
         Alert.alert("Sucesso", "Despesa aprovada e adicionada ao grupo!");
       } else {
         await rejectExpense(notification.expenseId, user.uid);
-        await deleteNotification(notification.id, user.uid);
+        await archiveNotification(notification.id); // Arquivar ao invés de deletar
         Alert.alert("Sucesso", "Despesa rejeitada");
       }
     } catch (error: any) {
@@ -70,11 +71,11 @@ export default function Notificacoes() {
     try {
       if (confirm) {
         await confirmPayment(notification.paymentId, user.uid, notification.expenseId, notification.groupId);
-        await deleteNotification(notification.id, user.uid);
+        await archiveNotification(notification.id); // Arquivar ao invés de deletar
         Alert.alert("Sucesso", "Pagamento confirmado!");
       } else {
         await rejectPayment(notification.paymentId, user.uid);
-        await deleteNotification(notification.id, user.uid);
+        await archiveNotification(notification.id); // Arquivar ao invés de deletar
         Alert.alert("Sucesso", "Pagamento rejeitado");
       }
     } catch (error: any) {
@@ -88,16 +89,16 @@ export default function Notificacoes() {
     try {
       if (accept) {
         await acceptFriendRequest(notification.friendRequestId);
-        // Deletar a notificação ao aceitar
-        await deleteNotification(notification.id, user.uid);
+        // Arquivar a notificação ao aceitar
+        await archiveNotification(notification.id);
         Alert.alert("Sucesso", "Convite de amizade aceito!");
       } else {
         await rejectFriendRequest(notification.friendRequestId);
-        await deleteNotification(notification.id, user.uid);
+        await archiveNotification(notification.id);
         Alert.alert("Sucesso", "Convite de amizade rejeitado");
       }
     } catch (error: any) {
-      // Se o erro for sobre solicitação já processada mas já são amigos, deletar notificação e mostrar mensagem positiva
+      // Se o erro for sobre solicitação já processada mas já são amigos, arquivar notificação e mostrar mensagem positiva
       if (error.message && error.message.includes("já foi processada")) {
         try {
           await deleteNotification(notification.id, user.uid);
@@ -120,7 +121,7 @@ export default function Notificacoes() {
 
   const formatTime = (timestamp: any) => {
     if (!timestamp) return "Agora";
-    
+
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -132,7 +133,7 @@ export default function Notificacoes() {
     if (diffMins < 60) return `Há ${diffMins} min`;
     if (diffHours < 24) return `Há ${diffHours}h`;
     if (diffDays < 7) return `Há ${diffDays} dias`;
-    
+
     return date.toLocaleDateString("pt-PT");
   };
 
@@ -148,6 +149,8 @@ export default function Notificacoes() {
         return "person-add-outline";
       case "MEMBER_ADDED":
         return "people-outline";
+      case "GROUP_CREATED":
+        return "add-circle-outline";
       case "PAYMENT_RECEIVED":
         return "cash-outline";
       case "PAYMENT_PENDING_CONFIRMATION":

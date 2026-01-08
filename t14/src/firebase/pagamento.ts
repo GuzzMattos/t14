@@ -4,6 +4,7 @@ import { Pagamento } from "@/types/Pagamento";
 import { getAuth } from "firebase/auth";
 import { createPaymentNotification } from "./notification";
 import { getUserFromFirestore } from "@/services/user";
+import { markDivisionAsPaid } from "./expense";
 
 interface CreatePagamentoPayload {
   despesaId?: string;
@@ -36,34 +37,39 @@ export async function createPagamentoInFirestore(payload: CreatePagamentoPayload
   if (!deUsuarioId || !paraUsuarioId)
     throw new Error("Usuários do pagamento são obrigatórios");
 
-  // Buscar dados da despesa para obter o criador
+  // Buscar dados da despesa para obter o criador e verificar se está aprovada
   const expenseRef = doc(db, "expenses", despesaId);
   const expenseSnap = await getDoc(expenseRef);
-  
+
   if (!expenseSnap.exists()) {
     throw new Error("Despesa não encontrada");
   }
-  
+
   const expense = expenseSnap.data();
+
+  // Verificar se a despesa está aprovada
+  if (expense.status !== "APPROVED") {
+    throw new Error("Apenas despesas aprovadas podem receber pagamentos");
+  }
+
   const expenseCreatorId = expense.createdBy;
-  
+
   // Buscar nome do pagador
   const pagadorUser = await getUserFromFirestore(deUsuarioId);
   const pagadorNome = pagadorUser?.name || "Usuário";
 
   const novoPagamento = {
-    despesaId,
-    valor,
-    deUsuarioId,
-    paraUsuarioId,
-    metodoPagamento,
-    comentario: comentario ?? "",
+    expenseId: despesaId, // Usar expenseId ao invés de despesaId
+    userId: deUsuarioId, // Simplificar para userId
+    amount: valor, // Usar amount ao invés de valor
+    paymentMethod: metodoPagamento,
+    comment: comentario ?? "",
     status: "PENDING_CONFIRMATION", // Pendente de confirmação
     createdBy: user.uid,
     createdAt: serverTimestamp(),
   };
 
-  const docRef = await addDoc(collection(db, "pagamentos"), novoPagamento);
+  const docRef = await addDoc(collection(db, "payments"), novoPagamento);
 
   // Criar notificação para o criador da despesa confirmar o pagamento
   await createPaymentNotification(
@@ -76,76 +82,86 @@ export async function createPagamentoInFirestore(payload: CreatePagamentoPayload
     expense.description || "Despesa"
   );
 
+  // Criar notificação de atividade para o próprio pagador (registro de pagamento)
+  const { createPaymentMadeNotification } = await import("./notification");
+  await createPaymentMadeNotification(
+    deUsuarioId,
+    despesaId,
+    expense.groupId || "",
+    valor,
+    expense.description || "Despesa"
+  );
+
   return docRef.id;
 }
 
 export async function updatePagamentoInFirestore(pagamentoId: string, payload: CreatePagamentoPayload) {
-    if (!pagamentoId) throw new Error("ID do pagamento não informado");
+  if (!pagamentoId) throw new Error("ID do pagamento não informado");
 
-    const pagamentoRef = doc(db, "pagamento", pagamentoId);
+  const pagamentoRef = doc(db, "payments", pagamentoId);
 
-    await updateDoc(pagamentoRef, {
+  await updateDoc(pagamentoRef, {
     ...payload,
-    atualizadoEm: serverTimestamp(),
-    });
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function getPagamentoFromFirestore(pagamentoId: string) {
-    const ref = doc(db, "pagamento", pagamentoId);
-    const snap = await getDoc(ref);
+  const ref = doc(db, "payments", pagamentoId);
+  const snap = await getDoc(ref);
 
-    if (!snap.exists()) return null;
+  if (!snap.exists()) return null;
 
-    const data = snap.data();
+  const data = snap.data();
 
-    return {
-        id: pagamentoId,
-        valor: data.valor,
-        deUsuarioId: data.deUsuarioId,
-        paraUsuarioId: data.paraUsuarioId,
-        metodoPagamento: data.metodoPagamento,
-        comentario: data.comentario,
-    };
+  return {
+    id: pagamentoId,
+    valor: data.amount || data.valor,
+    deUsuarioId: data.userId || data.deUsuarioId,
+    paraUsuarioId: data.paraUsuarioId,
+    metodoPagamento: data.paymentMethod || data.metodoPagamento,
+    comentario: data.comment || data.comentario,
+  };
 }
 
-export async function getTotalPagoPorUsuario(despesaId: string, userId: string) {
-    try {
+export async function getTotalPagoPorUsuario(expenseId: string, userId: string) {
+  try {
+    const q = query(
+      collection(db, "payments"),
+      where("expenseId", "==", expenseId),
+      where("userId", "==", userId),
+      where("status", "==", "CONFIRMED") // Apenas pagamentos confirmados
+    );
+
+    const snap = await getDocs(q);
+
+    let totalPago = 0;
+    snap.forEach(doc => {
+      totalPago += doc.data().amount;
+    });
+
+    return totalPago;
+  } catch (error: any) {
+    // Se falhar por falta de índice, busca todos e filtra em memória
+    if (error.code === "failed-precondition") {
+      console.warn("Índice composto não encontrado, filtrando em memória");
       const q = query(
-        collection(db, "pagamentos"),
-        where("despesaId", "==", despesaId),
-        where("deUsuarioId", "==", userId),
-        where("status", "==", "CONFIRMED") // Apenas pagamentos confirmados
+        collection(db, "payments"),
+        where("expenseId", "==", expenseId),
+        where("userId", "==", userId)
       );
-
       const snap = await getDocs(q);
-
       let totalPago = 0;
       snap.forEach(doc => {
-        totalPago += doc.data().valor;
+        const data = doc.data();
+        if (data.status === "CONFIRMED") {
+          totalPago += data.amount;
+        }
       });
-
       return totalPago;
-    } catch (error: any) {
-      // Se falhar por falta de índice, busca todos e filtra em memória
-      if (error.code === "failed-precondition") {
-        console.warn("Índice composto não encontrado, filtrando em memória");
-        const q = query(
-          collection(db, "pagamentos"),
-          where("despesaId", "==", despesaId),
-          where("deUsuarioId", "==", userId)
-        );
-        const snap = await getDocs(q);
-        let totalPago = 0;
-        snap.forEach(doc => {
-          const data = doc.data();
-          if (data.status === "CONFIRMED") {
-            totalPago += data.valor;
-          }
-        });
-        return totalPago;
-      }
-      throw error;
     }
+    throw error;
+  }
 }
 
 export async function getValoresIndividuaisAtualizados(despesa: any) {
@@ -156,7 +172,7 @@ export async function getValoresIndividuaisAtualizados(despesa: any) {
     const saldo = pessoa.valor - totalPago;
     pessoasAtualizadas.push({
       ...pessoa,
-      saldo, 
+      saldo,
     });
   }
 
@@ -181,7 +197,7 @@ export async function confirmPayment(
   }
 
   // Buscar o pagamento
-  const paymentRef = doc(db, "pagamentos", paymentId);
+  const paymentRef = doc(db, "payments", paymentId);
   const paymentSnap = await getDoc(paymentRef);
 
   if (!paymentSnap.exists()) {
@@ -218,25 +234,31 @@ export async function confirmPayment(
     updatedAt: now,
   });
 
+  // Marcar a divisão como paga na despesa
+  await markDivisionAsPaid(expenseId, payment.userId || payment.deUsuarioId);
+
   // Atualizar saldos do grupo
   const groupRef = doc(db, "group", groupId);
   const groupSnap = await getDoc(groupRef);
+
+  const payerId = payment.userId || payment.deUsuarioId;
+  const paymentAmount = payment.amount || payment.valor;
 
   if (groupSnap.exists()) {
     const groupData = groupSnap.data();
     const balances = groupData.balances || {};
 
     // Quem pagou: reduz sua dívida
-    if (!balances[payment.deUsuarioId]) {
-      balances[payment.deUsuarioId] = 0;
+    if (!balances[payerId]) {
+      balances[payerId] = 0;
     }
-    balances[payment.deUsuarioId] += payment.valor; // Reduz a dívida (soma porque saldo é negativo)
+    balances[payerId] += paymentAmount; // Reduz a dívida (soma porque saldo é negativo)
 
-    // Quem recebeu: aumenta seu crédito
-    if (!balances[payment.paraUsuarioId]) {
-      balances[payment.paraUsuarioId] = 0;
+    // Quem recebeu (criador da despesa): aumenta seu crédito
+    if (!balances[expense.createdBy]) {
+      balances[expense.createdBy] = 0;
     }
-    balances[payment.paraUsuarioId] -= payment.valor; // Aumenta o crédito (subtrai porque saldo é negativo)
+    balances[expense.createdBy] -= paymentAmount; // Aumenta o crédito (subtrai porque saldo é negativo)
 
     await updateDoc(groupRef, {
       balances,
@@ -247,15 +269,15 @@ export async function confirmPayment(
 
   // Criar notificação para quem pagou informando que foi confirmado
   const { createNotification } = await import("./notification");
-  const pagadorUser = await getUserFromFirestore(payment.deUsuarioId);
+  const pagadorUser = await getUserFromFirestore(payerId);
   const pagadorNome = pagadorUser?.name || "Você";
 
   await createNotification({
-    userId: payment.deUsuarioId,
+    userId: payerId,
     type: "PAYMENT_RECEIVED",
     status: "UNREAD",
     title: "Pagamento confirmado",
-    message: `Seu pagamento de ${payment.valor.toFixed(2)}€ foi confirmado.`,
+    message: `Seu pagamento de ${paymentAmount.toFixed(2)}€ foi confirmado.`,
     groupId,
     expenseId,
   });
@@ -276,7 +298,7 @@ export async function rejectPayment(
   }
 
   // Buscar o pagamento
-  const paymentRef = doc(db, "pagamentos", paymentId);
+  const paymentRef = doc(db, "payments", paymentId);
   const paymentSnap = await getDoc(paymentRef);
 
   if (!paymentSnap.exists()) {
@@ -290,7 +312,7 @@ export async function rejectPayment(
   }
 
   // Buscar a despesa para verificar se o usuário é o criador
-  const expenseRef = doc(db, "expenses", payment.despesaId);
+  const expenseRef = doc(db, "expenses", payment.expenseId || payment.despesaId);
   const expenseSnap = await getDoc(expenseRef);
 
   if (!expenseSnap.exists()) {
@@ -313,16 +335,19 @@ export async function rejectPayment(
     updatedAt: now,
   });
 
+  const payerId = payment.userId || payment.deUsuarioId;
+  const paymentAmount = payment.amount || payment.valor;
+
   // Criar notificação para quem pagou informando que foi rejeitado
   const { createNotification } = await import("./notification");
 
   await createNotification({
-    userId: payment.deUsuarioId,
+    userId: payerId,
     type: "PAYMENT_RECEIVED",
     status: "UNREAD",
     title: "Pagamento rejeitado",
-    message: `Seu pagamento de ${payment.valor.toFixed(2)}€ foi rejeitado. Entre em contato para mais informações.`,
+    message: `Seu pagamento de ${paymentAmount.toFixed(2)}€ foi rejeitado. Entre em contato para mais informações.`,
     groupId: expense.groupId,
-    expenseId: payment.despesaId,
+    expenseId: payment.expenseId || payment.despesaId,
   });
 }
