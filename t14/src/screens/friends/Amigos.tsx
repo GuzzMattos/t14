@@ -188,16 +188,16 @@ export default function Amigos({ navigation }: AmigosProps) {
 
     try {
       await sendFriendRequest(user.uid, email.trim());
-      
+
       // Buscar o usuário para criar notificação
       const usersRef = collection(db, "users");
       const q = query(usersRef, where("email", "==", email.toLowerCase()));
       const snapshot = await getDocs(q);
-      
+
       if (!snapshot.empty) {
         const toUser = snapshot.docs[0];
         const toUserId = toUser.id;
-        
+
         // Buscar a solicitação criada
         const requestsRef = collection(db, "friendRequests");
         const requestQuery = query(
@@ -206,7 +206,7 @@ export default function Amigos({ navigation }: AmigosProps) {
           where("toUserId", "==", toUserId)
         );
         const requestSnapshot = await getDocs(requestQuery);
-        
+
         if (!requestSnapshot.empty) {
           const requestId = requestSnapshot.docs[0].id;
           const fromUser = await getUserFromFirestore(user.uid);
@@ -337,41 +337,41 @@ export default function Amigos({ navigation }: AmigosProps) {
               <Avatar.Image size={100} source={{ uri: SelectedAmigo.avatar }} style={modalStyles.avatar} />
 
               <View style={modalStyles.infoSection}>
-                <Row 
-                  icon={<MaterialCommunityIcons name="account-outline" size={20} color={colors.primary} />} 
-                  label="Nome" 
-                  value={`${SelectedAmigo.primeiroNome} ${SelectedAmigo.apelido}`.trim() || "Sem nome"} 
+                <Row
+                  icon={<MaterialCommunityIcons name="account-outline" size={20} color={colors.primary} />}
+                  label="Nome"
+                  value={`${SelectedAmigo.primeiroNome} ${SelectedAmigo.apelido}`.trim() || "Sem nome"}
                 />
                 {SelectedAmigo.nickname ? (
-                  <Row 
-                    icon={<MaterialCommunityIcons name="account-circle-outline" size={20} color={colors.primary} />} 
-                    label="Nickname" 
-                    value={SelectedAmigo.nickname} 
+                  <Row
+                    icon={<MaterialCommunityIcons name="account-circle-outline" size={20} color={colors.primary} />}
+                    label="Nickname"
+                    value={SelectedAmigo.nickname}
                   />
                 ) : null}
-                <Row 
-                  icon={<MaterialCommunityIcons name="email-outline" size={20} color={colors.primary} />} 
-                  label="Email" 
-                  value={SelectedAmigo.email || "Sem email"} 
+                <Row
+                  icon={<MaterialCommunityIcons name="email-outline" size={20} color={colors.primary} />}
+                  label="Email"
+                  value={SelectedAmigo.email || "Sem email"}
                 />
                 {SelectedAmigo.telefone ? (
-                  <Row 
-                    icon={<MaterialCommunityIcons name="phone-outline" size={20} color={colors.primary} />} 
-                    label="Telefone" 
-                    value={SelectedAmigo.telefone} 
+                  <Row
+                    icon={<MaterialCommunityIcons name="phone-outline" size={20} color={colors.primary} />}
+                    label="Telefone"
+                    value={SelectedAmigo.telefone}
                   />
                 ) : null}
-                <Row 
-                  icon={<MaterialCommunityIcons name="check-circle-outline" size={20} color={SelectedAmigo.estado === 'ativo' ? "#10B981" : "#F59E0B"} />} 
-                  label="Estado" 
-                  value={SelectedAmigo.estado === 'ativo' ? "ATIVO" : "PENDENTE"} 
+                <Row
+                  icon={<MaterialCommunityIcons name="check-circle-outline" size={20} color={SelectedAmigo.estado === 'ativo' ? "#10B981" : "#F59E0B"} />}
+                  label="Estado"
+                  value={SelectedAmigo.estado === 'ativo' ? "ATIVO" : "PENDENTE"}
                 />
               </View>
             </View>
 
             <View style={modalStyles.actions}>
               {SelectedAmigo.estado === 'ativo' && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={async () => {
                     Alert.alert(
                       "Remover amigo",
@@ -467,19 +467,19 @@ const rowStyles = StyleSheet.create({
   value: { color: "#6B7280" },
 });
 
-function FriendItem({ 
-  item, 
-  onPress, 
-  onAdicionarPendente, 
-  onRemoverPendente 
-}: { 
-  item: Amigo; 
+function FriendItem({
+  item,
+  onPress,
+  onAdicionarPendente,
+  onRemoverPendente
+}: {
+  item: Amigo;
   onPress: () => void;
   onAdicionarPendente?: (amigo: Amigo) => void;
   onRemoverPendente?: (amigo: Amigo) => void;
 }) {
   const nomeCompleto = `${item.primeiroNome} ${item.apelido}`;
-  
+
   return (
     <TouchableOpacity
       activeOpacity={0.8}
@@ -516,8 +516,8 @@ function FriendItem({
 }
 
 const styles = StyleSheet.create({
-  window: { 
-    flex: 1, 
+  window: {
+    flex: 1,
     backgroundColor: colors.background,
     paddingHorizontal: 20,
     paddingTop: 16,
@@ -610,15 +610,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  erroText: { 
-    color: "#E11D48", 
-    marginTop: 5, 
+  erroText: {
+    color: "#E11D48",
+    marginTop: 5,
     fontSize: 13,
     fontWeight: "500",
   },
-  sucessoText: { 
-    color: "#10B981", 
-    marginTop: 5, 
+  sucessoText: {
+    color: "#10B981",
+    marginTop: 5,
     fontSize: 13,
     fontWeight: "500",
   },
@@ -634,10 +634,10 @@ const modalStyles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  title: { 
-    fontSize: 22, 
-    fontWeight: "800", 
-    color: "#111827", 
+  title: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#111827",
     flex: 1,
     textAlign: "center",
   },
@@ -647,23 +647,23 @@ const modalStyles = StyleSheet.create({
     top: 8,
     padding: 8,
   },
-  divider: { 
-    height: 1, 
-    backgroundColor: "#D1D5DB", 
+  divider: {
+    height: 1,
+    backgroundColor: "#D1D5DB",
     opacity: 0.7,
     marginHorizontal: 16,
   },
-  card: { 
-    backgroundColor: "#fff", 
-    borderRadius: 16, 
-    marginHorizontal: 16, 
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    marginHorizontal: 16,
     marginTop: 20,
     paddingVertical: 20,
-    borderWidth: 1, 
-    borderColor: "#D1D5DB", 
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
   },
-  avatar: { 
-    alignSelf: "center", 
+  avatar: {
+    alignSelf: "center",
     marginBottom: 20,
   },
   infoSection: {
@@ -674,26 +674,26 @@ const modalStyles = StyleSheet.create({
     marginTop: 20,
     gap: 12,
   },
-  removeButton: { 
+  removeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 12, 
-    paddingHorizontal: 16, 
-    backgroundColor: "#E11D48", 
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#E11D48",
     borderRadius: 12,
   },
-  closeButton: { 
+  closeButton: {
     alignItems: 'center',
-    paddingVertical: 12, 
-    paddingHorizontal: 16, 
-    backgroundColor: colors.primary, 
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: colors.primary,
     borderRadius: 12,
   },
-  buttonText: { 
-    color: "#fff", 
-    fontSize: 16, 
+  buttonText: {
+    color: "#fff",
+    fontSize: 16,
     fontWeight: "700",
   },
 });

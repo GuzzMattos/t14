@@ -87,17 +87,17 @@ export default function GrupoForm({ route, navigation }: any) {
     console.log('🔄 Filtrando usuários...');
     console.log('Total de usuários:', allUsers.length);
     console.log('Email do usuário logado:', user?.email);
-    
+
     // Remover o próprio usuário da lista
     const usersWithoutSelf = allUsers.filter((u) => u.email !== user?.email);
     console.log('Usuários sem o próprio:', usersWithoutSelf.length);
-    
+
     // Se não há pesquisa, retornar todos (exceto o próprio)
     if (!searchQuery.trim()) {
       console.log('✅ Sem pesquisa, retornando todos:', usersWithoutSelf.length);
       return usersWithoutSelf;
     }
-    
+
     // Aplicar filtro de pesquisa
     const query = searchQuery.toLowerCase();
     const filtered = usersWithoutSelf.filter((u) => {
@@ -128,7 +128,7 @@ export default function GrupoForm({ route, navigation }: any) {
 
     try {
       setLoadingCreate(true);
-      
+
       await updateGroup(grupo.id, {
         name: nomeGrupo.trim(),
         description: descricao?.trim() || "",
@@ -333,8 +333,8 @@ export default function GrupoForm({ route, navigation }: any) {
               <View style={{ flex: 1 }}>
                 <Text style={s.modalTitle}>Selecionar Membros</Text>
                 <Text style={s.modalSubtitle}>
-                  {loadingUsers 
-                    ? "Carregando..." 
+                  {loadingUsers
+                    ? "Carregando..."
                     : `${filteredUsers.length} usuário${filteredUsers.length !== 1 ? 's' : ''} disponível${filteredUsers.length !== 1 ? 'eis' : ''}`
                   }
                 </Text>
@@ -410,10 +410,10 @@ export default function GrupoForm({ route, navigation }: any) {
                         activeOpacity={0.7}
                       >
                         <View style={s.userAvatar}>
-                          <MaterialCommunityIcons 
-                            name="account" 
-                            size={24} 
-                            color={selected ? "#fff" : colors.primary} 
+                          <MaterialCommunityIcons
+                            name="account"
+                            size={24}
+                            color={selected ? "#fff" : colors.primary}
                           />
                         </View>
                         <View style={s.userInfo}>
